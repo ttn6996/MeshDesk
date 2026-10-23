@@ -1,0 +1,15 @@
+[package]
+name = "meshdesk-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+meshdesk-core = { path = "../meshdesk-core" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+log.workspace = true
