@@ -18,22 +18,24 @@ This document outlines the six architectural milestones required to deliver a pr
 
 ---
 
-## Milestone 1: Desktop Foundation & Workspace UI
-- [ ] Initialize Cargo workspace (`crates/meshdesk-core`, `crates/meshdesk-identity`, `crates/meshdesk-storage`, `crates/meshdesk-protocol`, `crates/meshdesk-desktop`).
-- [ ] Initialize React 18/19 + TypeScript + Vite frontend with Tailwind CSS and Lucide icons.
-- [ ] Implement desktop navigation:
+## Milestone 1: Desktop Foundation & Workspace UI (Complete)
+- [x] Initialize Cargo workspace (`crates/meshdesk-core`, `crates/meshdesk-identity`, `crates/meshdesk-storage`, `crates/meshdesk-protocol`, `crates/meshdesk-app`).
+- [x] Integrate Tauri 2 desktop shell configuration and IPC command bridges (`src-tauri` -> `crates/meshdesk-app`).
+- [x] Initialize React 19 + TypeScript + Vite frontend with Tailwind CSS and Lucide icons.
+- [x] Implement desktop navigation:
   - Multi-PC Workspace Dashboard with quick stats and system health.
-  - Device sidebar with status badges (Online, Busy, Offline, Discovered).
+  - Device sidebar with status badges and search filtering.
   - Main workspace canvas supporting grid and list layouts.
   - Connect-by-ID dialog (Device ID input, access password, connection mode).
-  - Settings panel (General, Network, Security, About).
-- [ ] Implement persistent local device metadata using SQLite (`meshdesk-storage`).
-- [ ] Establish simulated service abstractions (clearly demarcating mock vs. live connections).
-- **Acceptance Criteria**:
-  - Desktop client launches and renders responsively.
-  - Device addition, renaming, tagging, and deletion persist across app restarts.
+  - Settings panel (General, Network, Security, Diagnostics & Node Identity).
+- [x] Implement persistent local device metadata using SQLite (`meshdesk-storage`) with automatic schema version migrations.
+- [x] Implement persistent Ed25519 node identity key generation and file storage.
+- [x] Establish hybrid service abstractions (`HybridDeviceService` bridging Tauri IPC with graceful web dev fallback).
+- **Acceptance Criteria Verification**:
+  - Desktop client configuration and entry point build cleanly (`cargo check --workspace`, `cargo test --workspace`).
+  - Device addition, renaming, tagging, and deletion persist across app restarts via SQLite.
   - Zero TypeScript linter or compiler errors (`strict: true`).
-  - No misleading claims regarding simulated vs live connection states.
+  - Honest status disclosure: unconnected mock devices are explicitly marked offline; simulated sessions display clear preview banners without fake metrics.
 
 ---
 

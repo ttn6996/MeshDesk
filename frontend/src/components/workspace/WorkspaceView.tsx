@@ -54,9 +54,14 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   });
 
   const onlineCount = devices.filter((d) => d.status === 'online').length;
-  const avgLatency = Math.round(
-    devices.reduce((acc, d) => acc + (d.latency_ms || 20), 0) / (devices.length || 1)
-  );
+  const devicesWithLatency = devices.filter((d) => d.latency_ms !== undefined);
+  const avgLatency =
+    devicesWithLatency.length > 0
+      ? Math.round(
+          devicesWithLatency.reduce((acc, d) => acc + (d.latency_ms || 0), 0) /
+            devicesWithLatency.length
+        )
+      : null;
 
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -106,7 +111,13 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
               LAN Avg Ping
             </span>
             <div className="text-2xl font-bold text-slate-200 mt-1">
-              {avgLatency} <span className="text-xs text-slate-500 font-normal">ms</span>
+              {avgLatency !== null ? (
+                <>
+                  {avgLatency} <span className="text-xs text-slate-500 font-normal">ms</span>
+                </>
+              ) : (
+                <span className="text-sm text-slate-500 font-normal">Pending M2</span>
+              )}
             </div>
           </div>
           <div className="w-10 h-10 rounded-lg bg-purple-600/10 border border-purple-500/20 flex items-center justify-center text-purple-400">

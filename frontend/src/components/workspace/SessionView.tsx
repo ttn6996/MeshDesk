@@ -6,10 +6,8 @@ import {
   Power,
   Activity,
   ShieldAlert,
-  Wifi,
   MousePointer,
   Keyboard,
-  Sparkles,
 } from 'lucide-react';
 import { SessionInfo } from '../../types';
 
@@ -130,44 +128,40 @@ export const SessionView: React.FC<SessionViewProps> = ({
             {/* Remote Desktop Header Banner */}
             <div className="p-4 flex items-center justify-between text-xs text-slate-400">
               <div className="flex items-center space-x-3 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-slate-800">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                 <span className="font-semibold text-slate-200">
-                  Remote Host: {activeSession.target_device_name}
+                  Target: {activeSession.target_device_name}
                 </span>
                 <span className="text-slate-500">({activeSession.target_device_id})</span>
               </div>
 
-              <div className="flex items-center space-x-4 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-slate-800 font-mono text-[11px]">
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <Wifi className="w-3.5 h-3.5" />
-                  {activeSession.latency_ms || 14} ms
-                </span>
-                <span className="text-blue-400">{activeSession.fps || 60} FPS</span>
-                <span className="text-slate-400">1920 x 1080 (100%)</span>
+              <div className="flex items-center space-x-3 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-slate-800 font-mono text-[11px]">
+                <span className="text-amber-400">Simulation Mode</span>
+                <span className="text-slate-400">Stream: Pending M3</span>
               </div>
             </div>
 
             {/* Simulated Desktop Center Graphic */}
             <div className="text-center p-6 max-w-lg mx-auto bg-slate-950/60 rounded-xl border border-slate-800/80 backdrop-blur">
-              <div className="w-16 h-16 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center mx-auto mb-4 text-blue-400">
-                <Sparkles className="w-8 h-8" />
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4 text-amber-400">
+                <ShieldAlert className="w-8 h-8" />
               </div>
               <h4 className="text-lg font-bold text-slate-100">
-                {activeSession.target_device_name} Connected
+                Session Simulation: {activeSession.target_device_name}
               </h4>
               <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                You are securely connected to node{' '}
+                You are testing the Multi-PC session lifecycle for node{' '}
                 <span className="font-mono text-slate-300">{activeSession.target_device_id}</span>.
-                Input events and viewport coordinates are isolated to this active session tab.
+                Input routing and tab management are active. Live screen capture (DXGI) and Windows input injection (SendInput) will be integrated in <strong className="text-blue-400">Milestone 3</strong>.
               </p>
               <div className="mt-4 flex items-center justify-center space-x-6 text-xs text-slate-400 border-t border-slate-800 pt-3">
                 <span className="flex items-center gap-1.5">
-                  <MousePointer className="w-3.5 h-3.5 text-blue-400" />
-                  Mouse Active
+                  <MousePointer className="w-3.5 h-3.5 text-amber-400" />
+                  Input Sandbox Active
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <Keyboard className="w-3.5 h-3.5 text-blue-400" />
-                  Keyboard Captured
+                  <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+                  Tab Focus Scoped
                 </span>
               </div>
             </div>
@@ -178,11 +172,11 @@ export const SessionView: React.FC<SessionViewProps> = ({
                 <div className="w-5 h-5 rounded bg-blue-600 flex items-center justify-center font-bold text-white text-[10px]">
                   ⊞
                 </div>
-                <span className="text-slate-300 font-medium">Windows 11 Remote Workspace</span>
+                <span className="text-slate-300 font-medium">MeshDesk Multi-PC Session Container</span>
               </div>
               <div className="flex items-center space-x-3 text-[11px] font-mono text-slate-500">
-                <span>Direct LAN Connection</span>
-                <span>ENC: TLS 1.3</span>
+                <span>Milestone 1 Desktop Foundation</span>
+                <span>Video: M3 DXGI</span>
               </div>
             </div>
           </div>
@@ -200,14 +194,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
       <footer className="h-7 bg-slate-950 border-t border-slate-800 px-4 flex items-center justify-between text-[11px] text-slate-500 font-mono select-none">
         <div className="flex items-center space-x-4">
           <span className="flex items-center gap-1 text-slate-400">
-            <Activity className="w-3 h-3 text-emerald-400" />
+            <Activity className="w-3 h-3 text-amber-400" />
             Session ID: {activeSession.session_id.slice(0, 16)}...
           </span>
-          <span>Transport: {activeSession.connection_type.toUpperCase()}</span>
+          <span>Simulation Mode</span>
         </div>
         <div className="flex items-center space-x-4">
-          <span>TX: {(activeSession.bytes_sent / 1024).toFixed(1)} KB</span>
-          <span>RX: {(activeSession.bytes_received / 1024).toFixed(1)} KB</span>
+          <span>Target: {activeSession.target_device_id}</span>
+          <span>Display Stream: Scheduled for Milestone 3</span>
         </div>
       </footer>
     </div>

@@ -2,61 +2,42 @@
 
 > **Unified Multi-PC Workspace for Windows 10 & 11**
 
-MeshDesk transforms multiple physical or virtual computers into one unified, responsive desktop working environment. It combines the seamless, password-authenticated connectivity of modern remote-access tools with a persistent, workspace-centric interface tailored for multi-computer workflows.
+MeshDesk transforms multiple physical or virtual computers into one unified, responsive desktop working environment. It combines the password-authenticated connectivity of modern remote-access software with a persistent, workspace-centric interface tailored for multi-computer workflows.
 
 ---
 
-## Key Features
-
-- 🏢 **Multi-PC Workspace**: Organize computers into unified workspaces, view system health, and switch across active machines in session tabs.
-- ⚡ **Dual Connection Modes**:
-  - **LAN Direct Mode**: Zero-cloud direct peer connection over the local network with automatic, opt-in discovery.
-  - **Internet P2P & Relay**: Robust connection negotiation via WebRTC, STUN NAT traversal, and automatic TURN fallback.
-- 🔒 **Defense-in-Depth Security**:
-  - Ed25519 cryptographic machine identity.
-  - Zero plaintext password transmission (Argon2id/PBKDF2 challenge-response).
-  - Short-lived session authorization tokens.
-  - Explicit consent and visible host-side indicators for active remote control.
-- 🚀 **Modern Windows Architecture**:
-  - Rust high-performance engine for protocol handling, networking, and Windows system calls.
-  - Tauri 2 desktop shell for minimal memory footprint and fast startup.
-  - React 19/18 + TypeScript + Vite frontend for responsive UI/UX.
-  - Embedded SQLite database for local device metadata persistence.
-
----
-
-## Repository Structure
+## Current Architecture & Component Boundaries
 
 ```
 MeshDesk/
-├── Cargo.toml                  # Cargo workspace definition
+├── .github/workflows/ci.yml    # Continuous Integration (Rust tests/fmt & Frontend build)
+├── Cargo.toml                  # Root Cargo workspace manifest
+├── src-tauri -> crates/meshdesk-app  # Directory link for Tauri 2 CLI
 ├── crates/
-│   ├── meshdesk-core/          # Core domain models, states, and error types
-│   ├── meshdesk-identity/      # Device ID generation, Ed25519 identity, hardware hash
-│   ├── meshdesk-storage/       # SQLite persistence, device metadata & migration engine
-│   ├── meshdesk-protocol/      # Wire protocol frames, serialization, and handshake FSM
-│   ├── meshdesk-discovery/     # Opt-in LAN discovery over UDP broadcast
-│   ├── meshdesk-signaling/     # Standalone WebSocket signaling server & client
-│   └── meshdesk-app/           # Tauri 2 Windows desktop application & IPC bridge
-├── frontend/                   # React + TypeScript + Vite frontend application
+│   ├── meshdesk-core/          # Shared domain models, enums (Device, Session, AppSettings)
+│   ├── meshdesk-identity/      # Ed25519 identity, BLAKE3 device ID derivation (MD-XXXX-XXXX)
+│   ├── meshdesk-storage/       # Embedded SQLite (WAL mode, schema migrations 1 & 2)
+│   ├── meshdesk-protocol/      # Binary length-prefixed wire protocol (64KB bound, magic MDSK)
+│   └── meshdesk-app/           # Tauri 2 Windows desktop engine & IPC command handlers
+├── frontend/                   # React 19 + TypeScript + Vite + Tailwind CSS desktop UI
 │   ├── src/
-│   │   ├── components/         # Workspace, Sidebar, DeviceCard, Dialogs, Settings
-│   │   ├── services/           # Device & storage service abstractions (real & mock)
-│   │   └── types/              # TypeScript domain types & interfaces
+│   │   ├── components/         # WorkspaceView, Sidebar, DeviceCard, SessionView, Dialogs, Settings
+│   │   ├── services/           # HybridDeviceService (bridges Tauri IPC with fallback to local store)
+│   │   └── types/              # TypeScript domain types mirroring Rust models
 │   └── package.json
 └── docs/
-    ├── ARCHITECTURE.md         # Subsystem architecture & network topologies
-    ├── ROADMAP.md              # Milestone definitions and acceptance criteria
-    ├── SECURITY.md             # Cryptographic handshake, threat mitigations
-    └── PROTOCOL.md             # Wire protocol framing & packet schemas
+    ├── ARCHITECTURE.md         # Subsystem architecture & dual connection topology
+    ├── ROADMAP.md              # Milestones 0 through 5 roadmap & criteria
+    ├── SECURITY.md             # Threat model, credential boundaries, handshake FSM
+    └── PROTOCOL.md             # Wire framing, message schemas, size bounds
 ```
 
 ---
 
-## Prerequisites & Toolchains (Windows 10/11 x64)
+## Toolchain & Environment Requirements (Windows 10/11 x64)
 
-1. **Node.js**: v20+ (Node v22+ recommended).
-2. **Rust Toolchain**: `stable-x86_64-pc-windows-gnu` or `stable-x86_64-pc-windows-msvc`.
+1. **Node.js**: v20+ (Node v22 LTS recommended).
+2. **Rust Toolchain**: `stable-x86_64-pc-windows-gnu` (with MinGW binutils: `gcc`, `ld`, `dlltool`) or `stable-x86_64-pc-windows-msvc`.
 3. **Microsoft Edge WebView2**: Pre-installed on Windows 10 & 11.
 
 ---
@@ -65,11 +46,21 @@ MeshDesk/
 
 ### 1. Build and Test Rust Backend Crates
 ```powershell
-# Run unit and integration tests across all workspace crates
+# Set toolchain and ASCII sysroot path (if running with MinGW GNU toolchain)
+$env:Path = "D:\APP\w64devkit\bin;D:\Users_Huong\.cargo\bin;" + $env:Path
+$env:RUSTFLAGS = "--sysroot D:\Users_Huong\.rustup\toolchains\stable-x86_64-pc-windows-gnu"
+
+# Check code formatting
+cargo fmt --all -- --check
+
+# Check workspace crates
+cargo check --workspace
+
+# Run all unit tests across all workspace crates
 cargo test --workspace
 
-# Check workspace crates without linking
-cargo check --workspace
+# Run the desktop engine in CLI diagnostics mode
+cargo run --bin meshdesk-app -- --cli
 ```
 
 ### 2. Frontend Development & Build
@@ -79,32 +70,60 @@ cd frontend
 # Install frontend dependencies
 npm install
 
-# Start Vite hot-reloading development server
-npm run dev
-
-# Run TypeScript typechecks and production build
+# Run TypeScript strict checks and Vite production build
 npm run build
+
+# Start hot-reloading development server in browser
+npm run dev
 ```
 
-### 3. Run Tauri Desktop Application
+### 3. Run Tauri 2 Desktop Shell
 ```powershell
-# From repository root or frontend
+cd frontend
+
+# Launch desktop window with Tauri 2 and live hot reload
 npm run tauri dev
 ```
 
 ---
 
-## Project Status & Milestones
+## Verified Features & Milestone Status
 
-- [x] **Milestone 0: Repository & Architecture Audit**: Complete specifications, toolchain verification, and documentation.
-- [x] **Milestone 1: Desktop Foundation**: Core Cargo workspace crates, persistent SQLite storage, responsive React workspace dashboard, device sidebar, connect dialog, and settings view.
-- [ ] **Milestone 2: Device Identity & LAN Connectivity**
-- [ ] **Milestone 3: Real Remote Desktop Session**
-- [ ] **Milestone 4: Internet Connectivity & NAT Traversal**
-- [ ] **Milestone 5: Multi-PC Workspace Production Experience**
+### Milestone 1: Desktop Foundation (Verified & Complete)
+- [x] **Tauri 2 Desktop Shell**: Embedded Windows application window with native system integration.
+- [x] **Rust IPC Bridge**:
+  - `cmd_get_local_identity`: Returns persistent Ed25519 node identity and formatted ID (`MD-XXXX-XXXX`).
+  - `cmd_list_devices`: Queries persistent SQLite database.
+  - `cmd_save_device`: Creates and updates device records.
+  - `cmd_delete_device`: Deletes device records.
+  - `cmd_get_app_settings` / `cmd_save_app_settings`: Reads/writes settings to SQLite (`app_settings` table).
+- [x] **Persistent Storage**: SQLite database (`%APPDATA%/MeshDesk/meshdesk.db`) with automatic schema version migrations.
+- [x] **Cryptographic Identity Storage**: Ed25519 private seed stored at `%APPDATA%/MeshDesk/identity.key`.
+- [x] **Productivity Workspace UI**:
+  - Main workspace dashboard with real device statistics.
+  - Left sidebar with workspace filters and search.
+  - Device cards with truthful status indicators (no fake online metrics).
+  - Connect-by-ID dialog with format validation.
+  - Add & Edit device dialog with persistent tag/notes support.
+  - Settings panel with network, LAN discovery toggles, and security consent options.
+  - Multi-session tab container ready for video streaming.
+
+### Upcoming Milestones
+- [ ] **Milestone 2: Device Identity & LAN Connectivity** (UDP broadcast discovery on port 48121, direct TCP handshake on 48120).
+- [ ] **Milestone 3: Real Remote Desktop Session** (DXGI Desktop Duplication capture, SendInput injection).
+- [ ] **Milestone 4: Internet Connectivity & NAT Traversal** (Signaling server, STUN/TURN WebRTC relay).
+- [ ] **Milestone 5: Multi-PC Workspace Production Experience** (Concurrent live streams, input sandboxing).
+
+---
+
+## Known Limitations
+
+1. **Remote Display & Input**: In Milestone 1, the session viewport provides an interactive state container and tab manager. Live desktop pixel streaming via DXGI and remote input injection via `SendInput` will be implemented in Milestone 3.
+2. **LAN Discovery**: In Milestone 1, devices in the registry are stored locally. Live network broadcasting and automated peer discovery across subnets will be activated in Milestone 2.
+3. **Non-ASCII Windows Usernames**: On environments where Windows usernames contain diacritics and GNU toolchains are utilized, a directory junction mapping to an ASCII path is recommended for GNU `ld.exe`.
 
 ---
 
 ## License
 
-Proprietary / MeshDesk Team. All rights reserved.
+Proprietary / MeshDesk Engineering Team. All rights reserved.

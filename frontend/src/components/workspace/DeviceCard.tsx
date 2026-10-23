@@ -107,10 +107,15 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
             </span>
           </div>
 
-          {device.latency_ms && (
+          {device.latency_ms ? (
             <div className="flex items-center space-x-1.5 col-span-2 text-emerald-400">
               <Clock className="w-3.5 h-3.5" />
               <span>Network Latency: {device.latency_ms} ms</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1.5 col-span-2 text-slate-500">
+              <Clock className="w-3.5 h-3.5" />
+              <span>Link Status: Idle (Not connected)</span>
             </div>
           )}
         </div>
@@ -134,12 +139,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
       <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
         <button
           onClick={() => onConnect(device)}
-          disabled={device.status === 'offline'}
-          className={`flex-1 flex items-center justify-center space-x-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold shadow-sm transition active:scale-95 ${
-            device.status === 'offline'
-              ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-              : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20'
-          }`}
+          className="flex-1 flex items-center justify-center space-x-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold shadow-sm transition active:scale-95 bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20"
         >
           <Play className="w-3.5 h-3.5 fill-current" />
           <span>Connect</span>

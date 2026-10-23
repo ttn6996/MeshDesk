@@ -1,0 +1,58 @@
+name: MeshDesk CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-check-and-test:
+    name: Rust Checks & Unit Tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Cargo Check
+        run: cargo check --workspace
+
+      - name: Run Workspace Tests
+        run: cargo test --workspace --verbose
+
+  frontend-build:
+    name: Frontend Typecheck & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Typecheck and Vite Build
+        run: npm run build

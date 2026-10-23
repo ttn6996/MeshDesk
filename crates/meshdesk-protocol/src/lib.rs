@@ -90,7 +90,9 @@ impl FrameCodec {
     /// Decode protocol message from raw binary frame
     pub fn decode(bytes: &[u8]) -> Result<Message> {
         if bytes.len() < 10 {
-            return Err(MeshDeskError::ProtocolError("Frame too short for header".into()));
+            return Err(MeshDeskError::ProtocolError(
+                "Frame too short for header".into(),
+            ));
         }
 
         if bytes[0..4] != PROTOCOL_MAGIC {
@@ -112,12 +114,15 @@ impl FrameCodec {
         }
 
         if bytes.len() < 10 + len {
-            return Err(MeshDeskError::ProtocolError("Frame payload truncated".into()));
+            return Err(MeshDeskError::ProtocolError(
+                "Frame payload truncated".into(),
+            ));
         }
 
         let payload = &bytes[10..10 + len];
-        let msg: Message = serde_json::from_slice(payload)
-            .map_err(|e| MeshDeskError::ProtocolError(format!("JSON deserialization failed: {e}")))?;
+        let msg: Message = serde_json::from_slice(payload).map_err(|e| {
+            MeshDeskError::ProtocolError(format!("JSON deserialization failed: {e}"))
+        })?;
 
         Ok(msg)
     }

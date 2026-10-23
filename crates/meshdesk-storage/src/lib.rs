@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
-use meshdesk_core::{Device, DeviceStatus, MeshDeskError, Result};
+use meshdesk_core::{AppSettings, Device, DeviceStatus, MeshDeskError, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub struct Storage {
@@ -14,7 +14,7 @@ impl Storage {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(path)
             .map_err(|e| MeshDeskError::StorageError(format!("Failed to open DB: {e}")))?;
-        
+
         let storage = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -24,9 +24,10 @@ impl Storage {
 
     /// Open an in-memory database for fast, isolated unit tests
     pub fn in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()
-            .map_err(|e| MeshDeskError::StorageError(format!("Failed to open in-memory DB: {e}")))?;
-        
+        let conn = Connection::open_in_memory().map_err(|e| {
+            MeshDeskError::StorageError(format!("Failed to open in-memory DB: {e}"))
+        })?;
+
         let storage = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -81,6 +82,21 @@ impl Storage {
                 COMMIT;",
             )
             .map_err(|e| MeshDeskError::StorageError(format!("Migration 1 failed: {e}")))?;
+        }
+
+        // Migration 2: Application Settings Table
+        if current_version < 2 {
+            conn.execute_batch(
+                "BEGIN TRANSACTION;
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    settings_json TEXT NOT NULL
+                );
+                INSERT INTO _schema_versions (version, applied_at, description)
+                VALUES (2, datetime('now'), 'Application settings schema');
+                COMMIT;",
+            )
+            .map_err(|e| MeshDeskError::StorageError(format!("Migration 2 failed: {e}")))?;
         }
 
         Ok(())
@@ -251,6 +267,40 @@ impl Storage {
 
         Ok(())
     }
+
+    pub fn save_settings(&self, settings: &AppSettings) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let json = serde_json::to_string(settings).map_err(|e| {
+            MeshDeskError::StorageError(format!("Failed to serialize settings: {e}"))
+        })?;
+
+        conn.execute(
+            "INSERT INTO app_settings (id, settings_json) VALUES (1, ?1)
+             ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json",
+            params![json],
+        )
+        .map_err(|e| MeshDeskError::StorageError(format!("Failed to save settings: {e}")))?;
+
+        Ok(())
+    }
+
+    pub fn get_settings(&self) -> Result<AppSettings> {
+        let conn = self.conn.lock().unwrap();
+        let maybe_json: Option<String> = conn
+            .query_row(
+                "SELECT settings_json FROM app_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| MeshDeskError::StorageError(format!("Failed to read settings: {e}")))?;
+
+        match maybe_json {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|e| MeshDeskError::StorageError(format!("Failed to parse settings: {e}"))),
+            None => Ok(AppSettings::default()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -266,7 +316,10 @@ mod tests {
 
         storage.save_device(&dev).unwrap();
 
-        let retrieved = storage.get_device("MD-8192-3021").unwrap().expect("Should exist");
+        let retrieved = storage
+            .get_device("MD-8192-3021")
+            .unwrap()
+            .expect("Should exist");
         assert_eq!(retrieved.name, "Test-PC");
         assert_eq!(retrieved.tags.len(), 2);
         assert!(retrieved.is_favorite);
@@ -274,7 +327,9 @@ mod tests {
         let list = storage.list_devices().unwrap();
         assert_eq!(list.len(), 1);
 
-        storage.update_device_status("MD-8192-3021", DeviceStatus::Online, Some(14)).unwrap();
+        storage
+            .update_device_status("MD-8192-3021", DeviceStatus::Online, Some(14))
+            .unwrap();
         let updated = storage.get_device("MD-8192-3021").unwrap().unwrap();
         assert_eq!(updated.status, DeviceStatus::Online);
         assert_eq!(updated.latency_ms, Some(14));
@@ -282,5 +337,16 @@ mod tests {
         let deleted = storage.delete_device("MD-8192-3021").unwrap();
         assert!(deleted);
         assert!(storage.get_device("MD-8192-3021").unwrap().is_none());
+
+        // Test settings persistence
+        let default_settings = storage.get_settings().unwrap();
+        assert_eq!(default_settings.device_name, "Workstation-Host");
+
+        let mut custom = default_settings;
+        custom.device_name = "Primary-Office-PC".into();
+        storage.save_settings(&custom).unwrap();
+
+        let loaded = storage.get_settings().unwrap();
+        assert_eq!(loaded.device_name, "Primary-Office-PC");
     }
 }

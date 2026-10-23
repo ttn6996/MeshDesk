@@ -2,7 +2,7 @@ pub mod device;
 pub mod error;
 pub mod session;
 
-pub use device::{ConnectionMode, ConnectionType, Device, DeviceStatus};
+pub use device::{AppSettings, ConnectionMode, ConnectionType, Device, DeviceStatus};
 pub use error::{MeshDeskError, Result};
 pub use session::{SessionInfo, SessionState};
 
