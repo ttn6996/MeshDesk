@@ -12,13 +12,14 @@ MeshDesk transforms multiple physical or virtual computers into one unified, res
 MeshDesk/
 ├── .github/workflows/ci.yml    # Continuous Integration (Rust tests/fmt & Frontend build)
 ├── Cargo.toml                  # Root Cargo workspace manifest
-├── src-tauri -> crates/meshdesk-app  # Directory link for Tauri 2 CLI
+├── package.json                # Root scripts (delegates npm run tauri/dev/build to frontend)
+├── src-tauri/                  # Tauri 2 Windows desktop shell (`meshdesk-desktop`)
 ├── crates/
 │   ├── meshdesk-core/          # Shared domain models, enums (Device, Session, AppSettings)
 │   ├── meshdesk-identity/      # Ed25519 identity, BLAKE3 device ID derivation (MD-XXXX-XXXX)
 │   ├── meshdesk-storage/       # Embedded SQLite (WAL mode, schema migrations 1 & 2)
 │   ├── meshdesk-protocol/      # Binary length-prefixed wire protocol (64KB bound, magic MDSK)
-│   └── meshdesk-app/           # Tauri 2 Windows desktop engine & IPC command handlers
+│   └── meshdesk-app/           # Tauri 2 desktop application engine & IPC command handlers
 ├── frontend/                   # React 19 + TypeScript + Vite + Tailwind CSS desktop UI
 │   ├── src/
 │   │   ├── components/         # WorkspaceView, Sidebar, DeviceCard, SessionView, Dialogs, Settings

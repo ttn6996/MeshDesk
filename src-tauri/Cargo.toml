@@ -1,5 +1,5 @@
 [package]
-name = "meshdesk-app"
+name = "meshdesk-desktop"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -9,12 +9,12 @@ license.workspace = true
 tauri-build = { version = "2.2", features = [] }
 
 [dependencies]
+meshdesk-app = { path = "../crates/meshdesk-app" }
 meshdesk-core = { path = "../crates/meshdesk-core" }
 meshdesk-identity = { path = "../crates/meshdesk-identity" }
 meshdesk-storage = { path = "../crates/meshdesk-storage" }
 meshdesk-protocol = { path = "../crates/meshdesk-protocol" }
 tauri = { version = "2.2", features = [] }
-rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

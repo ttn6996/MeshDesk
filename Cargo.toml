@@ -5,6 +5,7 @@ members = [
     "crates/meshdesk-identity",
     "crates/meshdesk-storage",
     "crates/meshdesk-protocol",
+    "crates/meshdesk-app",
     "src-tauri",
 ]
 

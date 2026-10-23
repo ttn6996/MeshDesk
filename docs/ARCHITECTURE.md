@@ -32,19 +32,24 @@ MeshDesk is a Windows-first desktop application engineered to unify multiple com
 
 ## 2. Architectural Boundaries & Modular Crates
 
-The codebase is structured as a modular Cargo workspace coupled with a high-performance React/TypeScript frontend:
+The codebase is organized as a Cargo workspace with verified boundaries:
 
+### Implemented Workspace Members (Milestone 1 Foundation)
 | Crate / Subsystem | Path | Primary Responsibility |
 | :--- | :--- | :--- |
-| **`meshdesk-core`** | `crates/meshdesk-core` | Shared domain models, status enums, configuration types, and cross-cutting error definitions. |
-| **`meshdesk-identity`** | `crates/meshdesk-identity` | Stable machine identity generation, Ed25519 keypair management, collision-resistant device ID encoding (e.g. `MD-XXXX-XXXX`), and hardware fingerprint hashing. |
-| **`meshdesk-storage`** | `crates/meshdesk-storage` | Embedded SQLite engine managing persistent device metadata, address history, user preferences, and schema migrations. |
-| **`meshdesk-protocol`** | `crates/meshdesk-protocol` | Versioned framing, handshake messages, challenge-response serialization, and bounded message validators. |
-| **`meshdesk-discovery`** | `crates/meshdesk-discovery` | Secure local network discovery over UDP broadcast / mDNS with strict opt-in consent and local subnet binding. |
-| **`meshdesk-signaling`** | `crates/meshdesk-signaling` | WebSocket-based rendezvous and connection broker enabling NAT traversal and session negotiation without handling raw video streams. |
-| **`meshdesk-session`** | `crates/meshdesk-session` | Cryptographic session negotiation, challenge-response password authentication, short-lived tokens, and state lifecycle. |
-| **`meshdesk-desktop`** | `crates/meshdesk-desktop` | Tauri 2 desktop shell, Windows system integration, IPC bridges, and desktop event loop. |
-| **`frontend`** | `frontend/` | React 19/18 + TypeScript + Vite workspace UI, session tabs, responsive device grid, and connection management. |
+| **`meshdesk-core`** | `crates/meshdesk-core` | Shared domain models (`Device`, `AppSettings`, `SessionInfo`), enums, and cross-cutting error definitions. |
+| **`meshdesk-identity`** | `crates/meshdesk-identity` | Stable machine identity generation, Ed25519 keypair management, collision-resistant device ID encoding (`MD-XXXX-XXXX`), and signature verification. |
+| **`meshdesk-storage`** | `crates/meshdesk-storage` | Embedded SQLite engine managing persistent device metadata, app settings, and linear schema version migrations. |
+| **`meshdesk-protocol`** | `crates/meshdesk-protocol` | Versioned wire protocol, length-prefixed binary framing (magic `MDSK`, 64KB bound), handshake frames, and message codec. |
+| **`meshdesk-app`** | `crates/meshdesk-app` | Core desktop application engine, `AppState`, persistent paths (`%APPDATA%/MeshDesk`), and Tauri 2 IPC command handlers. |
+| **`meshdesk-desktop`** | `src-tauri` | Desktop application shell for Tauri 2 CLI, windowing configuration, capabilities, and desktop runner. |
+| **`frontend`** | `frontend/` | React 19 + TypeScript + Vite workspace UI, session tabs, responsive device grid, and settings panel. |
+
+### Planned Modular Components (Subsequent Milestones)
+*Note: To prevent workspace clutter, the following components are scheduled for their respective milestones and are not declared as empty workspace crates:*
+- **`meshdesk-discovery`** (*Milestone 2*): Opt-in UDP broadcast LAN announcements and subnet listener.
+- **`remote-desktop` / `meshdesk-stream`** (*Milestone 3*): Windows Desktop Duplication API (DXGI) capture and SendInput injection.
+- **`meshdesk-signaling`** (*Milestone 4*): Standalone WebSocket signaling server for WebRTC SDP exchange and NAT traversal.
 
 ---
 
