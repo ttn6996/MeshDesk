@@ -6,6 +6,7 @@
     "dev": "npm --prefix frontend run dev",
     "build": "npm --prefix frontend run build",
     "preview": "npm --prefix frontend run preview",
-    "tauri": "npm --prefix frontend run tauri --"
+    "tauri": "node frontend/node_modules/@tauri-apps/cli/tauri.js"
   }
 }
+

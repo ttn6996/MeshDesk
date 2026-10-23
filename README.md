@@ -66,23 +66,21 @@ cargo run --bin meshdesk-app -- --cli
 
 ### 2. Frontend Development & Build
 ```powershell
-cd frontend
-
-# Install frontend dependencies
-npm install
+# From repository root (or inside frontend/):
+# Install dependencies (first run)
+cd frontend; npm install; cd ..
 
 # Run TypeScript strict checks and Vite production build
 npm run build
 
-# Start hot-reloading development server in browser
+# Start hot-reloading development server in browser (http://localhost:5173)
 npm run dev
 ```
 
 ### 3. Run Tauri 2 Desktop Shell
 ```powershell
-cd frontend
-
-# Launch desktop window with Tauri 2 and live hot reload
+# Launch native Windows desktop window with Tauri 2 and live hot reload
+# (Automatically runs Vite frontend dev server via configured beforeDevCommand)
 npm run tauri dev
 ```
 

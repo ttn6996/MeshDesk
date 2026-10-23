@@ -115,12 +115,34 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub fn cmd_get_local_identity(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<IdentityInfo, String> {
+        Ok(state.get_local_identity())
+    }
+
+    #[tauri::command]
     pub fn list_devices(state: State<'_, AppState>) -> std::result::Result<Vec<Device>, String> {
         state.list_devices().map_err(|e| e.to_string())
     }
 
     #[tauri::command]
+    pub fn cmd_list_devices(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<Vec<Device>, String> {
+        state.list_devices().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
     pub fn save_device(
+        state: State<'_, AppState>,
+        device: Device,
+    ) -> std::result::Result<(), String> {
+        state.save_device(device).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn cmd_save_device(
         state: State<'_, AppState>,
         device: Device,
     ) -> std::result::Result<(), String> {
@@ -136,6 +158,14 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub fn cmd_delete_device(
+        state: State<'_, AppState>,
+        id: String,
+    ) -> std::result::Result<bool, String> {
+        state.delete_device(&id).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
     pub fn get_app_settings(
         state: State<'_, AppState>,
     ) -> std::result::Result<AppSettings, String> {
@@ -143,7 +173,22 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub fn cmd_get_app_settings(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<AppSettings, String> {
+        state.get_settings().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
     pub fn save_app_settings(
+        state: State<'_, AppState>,
+        settings: AppSettings,
+    ) -> std::result::Result<(), String> {
+        state.save_settings(&settings).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn cmd_save_app_settings(
         state: State<'_, AppState>,
         settings: AppSettings,
     ) -> std::result::Result<(), String> {
@@ -167,11 +212,17 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_local_identity,
+            commands::cmd_get_local_identity,
             commands::list_devices,
+            commands::cmd_list_devices,
             commands::save_device,
+            commands::cmd_save_device,
             commands::delete_device,
+            commands::cmd_delete_device,
             commands::get_app_settings,
-            commands::save_app_settings
+            commands::cmd_get_app_settings,
+            commands::save_app_settings,
+            commands::cmd_save_app_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
