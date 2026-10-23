@@ -73,7 +73,7 @@ cd frontend; npm install; cd ..
 # Run TypeScript strict checks and Vite production build
 npm run build
 
-# Start hot-reloading development server in browser (http://localhost:5173)
+# Start hot-reloading development server in browser (http://localhost:1420)
 npm run dev
 ```
 
