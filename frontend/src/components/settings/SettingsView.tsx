@@ -52,7 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack, localIdentit
   };
 
   const handleResetDatabase = async () => {
-    if (confirm('Are you sure you want to restore default device registry and settings?')) {
+    if (confirm('Are you sure you want to clear local cache and reset settings?')) {
       localStorage.clear();
       window.location.reload();
     }
@@ -299,7 +299,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack, localIdentit
             <div>
               <h4 className="text-xs font-semibold text-slate-200">Reset Local Configuration</h4>
               <p className="text-[11px] text-slate-400">
-                Restore initial seed devices and flush cached local state
+                Clear cached local settings and reload workspace
               </p>
             </div>
           </div>

@@ -36,13 +36,10 @@ export const DeviceEditDialog: React.FC<DeviceEditDialogProps> = ({
       setIsFavorite(device.is_favorite);
     } else {
       setName('');
-      // Generate a random valid format ID suggestion
-      const p1 = Math.floor(1000 + Math.random() * 9000);
-      const p2 = Math.floor(1000 + Math.random() * 9000);
-      setId(`MD-${p1}-${p2}`);
+      setId('');
       setHostname('');
       setOsInfo('Windows 11 Pro x64');
-      setTagsStr('workstation');
+      setTagsStr('');
       setNotes('');
       setIsFavorite(false);
     }

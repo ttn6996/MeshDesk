@@ -26,58 +26,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
 };
 
-// Seed devices start strictly as offline/unconnected until verified by live discovery
-const INITIAL_SEED_DEVICES: Device[] = [
-  {
-    id: 'MD-1082-9402',
-    name: 'Build-Server-Alpha',
-    hostname: '192.168.1.150',
-    status: 'offline',
-    os_info: 'Windows 11 Pro x64',
-    last_seen: new Date().toISOString(),
-    tags: ['infra', 'builds'],
-    notes: 'CI/CD pipeline workstation (LAN Direct)',
-    latency_ms: undefined,
-    is_favorite: true,
-  },
-  {
-    id: 'MD-8321-4921',
-    name: 'Design-Station-02',
-    hostname: '192.168.1.182',
-    status: 'offline',
-    os_info: 'Windows 11 Pro x64',
-    last_seen: new Date().toISOString(),
-    tags: ['workstation', 'gpu'],
-    notes: 'Rendering rig (LAN Direct)',
-    latency_ms: undefined,
-    is_favorite: true,
-  },
-  {
-    id: 'MD-7419-5820',
-    name: 'Lab-Test-Rig',
-    hostname: '192.168.1.204',
-    status: 'offline',
-    os_info: 'Windows 10 Enterprise x64',
-    last_seen: new Date(Date.now() - 3600000).toISOString(),
-    tags: ['lab', 'testing'],
-    notes: 'Regression test bench (LAN Direct)',
-    latency_ms: undefined,
-    is_favorite: false,
-  },
-  {
-    id: 'MD-6204-1849',
-    name: 'Office-Laptop-X1',
-    hostname: undefined,
-    status: 'offline',
-    os_info: 'Windows 11 x64',
-    last_seen: new Date(Date.now() - 86400000).toISOString(),
-    tags: ['mobile'],
-    notes: 'Mobile client (Internet P2P mode)',
-    latency_ms: undefined,
-    is_favorite: false,
-  },
-];
-
 export interface IDeviceService {
   isTauriEnvironment(): boolean;
   getLocalIdentity(): Promise<LocalIdentity>;
@@ -86,12 +34,6 @@ export interface IDeviceService {
   deleteDevice(id: string): Promise<boolean>;
   getSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<void>;
-  simulateConnect(
-    targetDeviceId: string,
-    targetName: string,
-    password: string,
-    onStateChange: (state: SessionInfo) => void
-  ): Promise<SessionInfo>;
   getLanDevices(): Promise<DiscoveredNode[]>;
   getHostAccessCredentials(): Promise<HostAccessCredentials>;
   generateNewAccessPassword(): Promise<HostAccessCredentials>;
@@ -148,10 +90,10 @@ class HybridDeviceService implements IDeviceService {
     }
 
     const newIdentity: LocalIdentity = {
-      device_id: 'MD-5920-1492',
-      public_key: 'ed25519-c09a8f219b4e7a32fd810e7492c0192a8b9f',
+      device_id: `MD-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`,
+      public_key: 'standalone-preview-key',
       hostname: 'DESKTOP-STANDALONE',
-      os_info: 'Windows 11 Pro x64 (Standalone Dev Mode)',
+      os_info: 'Windows 10/11 x64',
     };
     localStorage.setItem(STORAGE_KEY_IDENTITY, JSON.stringify(newIdentity));
     return newIdentity;
@@ -161,14 +103,7 @@ class HybridDeviceService implements IDeviceService {
     if (this.isTauriEnvironment()) {
       try {
         const devices = await invoke<Device[]>('cmd_list_devices');
-        if (devices && devices.length > 0) {
-          return devices;
-        }
-        // If first launch with empty database, seed initial devices
-        for (const seed of INITIAL_SEED_DEVICES) {
-          await invoke('cmd_save_device', { device: seed });
-        }
-        return await invoke<Device[]>('cmd_list_devices');
+        return devices || [];
       } catch (err) {
         console.warn('Tauri IPC failed for list_devices, falling back to local store:', err);
       }
@@ -176,13 +111,12 @@ class HybridDeviceService implements IDeviceService {
 
     const raw = localStorage.getItem(STORAGE_KEY_DEVICES);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY_DEVICES, JSON.stringify(INITIAL_SEED_DEVICES));
-      return INITIAL_SEED_DEVICES;
+      return [];
     }
     try {
       return JSON.parse(raw);
     } catch {
-      return INITIAL_SEED_DEVICES;
+      return [];
     }
   }
 
@@ -252,60 +186,6 @@ class HybridDeviceService implements IDeviceService {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
   }
 
-  async simulateConnect(
-    targetDeviceId: string,
-    targetName: string,
-    _password: string,
-    onStateChange: (state: SessionInfo) => void
-  ): Promise<SessionInfo> {
-    const sessionId = `sim-sess-${Date.now()}`;
-    const initialSession: SessionInfo = {
-      session_id: sessionId,
-      target_device_id: targetDeviceId,
-      target_device_name: targetName,
-      connection_type: 'lan',
-      state: 'resolving',
-      started_at: new Date().toISOString(),
-      bytes_received: 0,
-      bytes_sent: 0,
-      is_simulated: true,
-    };
-
-    onStateChange(initialSession);
-
-    // Realistic state progression for UI testing
-    await new Promise((r) => setTimeout(r, 600));
-    const step2: SessionInfo = {
-      ...initialSession,
-      state: 'connecting',
-      bytes_sent: 256,
-      bytes_received: 512,
-    };
-    onStateChange(step2);
-
-    await new Promise((r) => setTimeout(r, 700));
-    const step3: SessionInfo = {
-      ...step2,
-      state: 'authenticating',
-      bytes_sent: 1024,
-      bytes_received: 2048,
-    };
-    onStateChange(step3);
-
-    await new Promise((r) => setTimeout(r, 600));
-    const connectedSession: SessionInfo = {
-      ...step3,
-      state: 'connected',
-      latency_ms: undefined, // Do not report fake latency as real network metrics
-      fps: undefined,
-      bytes_sent: 1024,
-      bytes_received: 2048,
-    };
-    onStateChange(connectedSession);
-
-    return connectedSession;
-  }
-
   async getLanDevices(): Promise<DiscoveredNode[]> {
     if (this.isTauriEnvironment()) {
       try {
@@ -326,10 +206,10 @@ class HybridDeviceService implements IDeviceService {
       }
     }
     return {
-      device_id: 'MD-LOCAL-HOST',
-      access_password: 'MESH-STANDALONE',
+      device_id: 'MD-OFFLINE',
+      access_password: '',
       port: 48120,
-      is_accepting_connections: true,
+      is_accepting_connections: false,
     };
   }
 
@@ -398,7 +278,22 @@ class HybridDeviceService implements IDeviceService {
       }
     }
 
-    return this.simulateConnect(targetDeviceId, targetName, password, onStateChange || (() => {}));
+    const notSupportedErr: SessionInfo = {
+      session_id: `failed-${Date.now()}`,
+      target_device_id: targetDeviceId,
+      target_device_name: targetName,
+      connection_type: 'lan',
+      state: 'failed',
+      started_at: new Date().toISOString(),
+      bytes_received: 0,
+      bytes_sent: 0,
+      is_simulated: false,
+      error_message: 'Direct LAN connection requires MeshDesk Tauri runtime.',
+    };
+    if (onStateChange) {
+      onStateChange(notSupportedErr);
+    }
+    throw new Error('Direct LAN connection requires MeshDesk Tauri runtime.');
   }
 
   async sendSessionInput(input: InputKind): Promise<void> {
@@ -470,7 +365,7 @@ class HybridDeviceService implements IDeviceService {
       }
     }
     return {
-      is_server_running: true,
+      is_server_running: false,
       is_client_connected: false,
       server_addr: 'ws://127.0.0.1:48122',
       online_peers_count: 0,

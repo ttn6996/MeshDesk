@@ -199,14 +199,6 @@ impl AppState {
             .store(settings.enable_lan_discovery, Ordering::SeqCst);
         self.storage.save_settings(settings)
     }
-
-    pub fn simulate_connect(&self, target_id: &str, target_name: &str) -> SessionInfo {
-        let mut session = SessionInfo::new(target_id, target_name, ConnectionType::Lan, true);
-        session.state = SessionState::Connected;
-        session.latency_ms = None;
-        session.fps = None;
-        session
-    }
 }
 
 pub fn get_app_data_dir() -> std::io::Result<PathBuf> {

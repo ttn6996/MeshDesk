@@ -35,7 +35,7 @@ This document outlines the six architectural milestones required to deliver a pr
   - Desktop client configuration and entry point build cleanly (`cargo check --workspace`, `cargo test --workspace`).
   - Device addition, renaming, tagging, and deletion persist across app restarts via SQLite.
   - Zero TypeScript linter or compiler errors (`strict: true`).
-  - Honest status disclosure: unconnected mock devices are explicitly marked offline; simulated sessions display clear preview banners without fake metrics.
+  - Zero mock or fake data: workspace starts completely clean, displaying strictly real discovered nodes and user-registered devices.
 
 ---
 

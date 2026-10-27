@@ -92,46 +92,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>Active Nodes</span>
           <Activity className="w-3 h-3 text-slate-400" />
         </div>
-        {devices.map((device) => {
-          const isOnline = device.status === 'online';
-          const isBusy = device.status === 'busy';
-          return (
-            <div
-              key={device.id}
-              onClick={() => onSelectDevice(device)}
-              className="group p-2 rounded-lg hover:bg-slate-800/80 cursor-pointer border border-transparent hover:border-slate-700/60 transition"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isOnline
-                        ? 'bg-emerald-400 ring-2 ring-emerald-500/20'
-                        : isBusy
-                        ? 'bg-amber-400 ring-2 ring-amber-500/20'
-                        : 'bg-slate-600'
-                    }`}
-                  />
-                  <span className="text-xs font-medium text-slate-200 group-hover:text-blue-400 transition truncate max-w-[120px]">
-                    {device.name}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-1">
-                  {device.latency_ms && (
-                    <span className="text-[10px] font-mono text-slate-500">
-                      {device.latency_ms}ms
+        {devices.length === 0 ? (
+          <div className="px-2 py-6 text-center text-slate-500 text-xs">
+            No devices registered
+          </div>
+        ) : (
+          devices.map((device) => {
+            const isOnline = device.status === 'online';
+            const isBusy = device.status === 'busy';
+            return (
+              <div
+                key={device.id}
+                onClick={() => onSelectDevice(device)}
+                className="group p-2 rounded-lg hover:bg-slate-800/80 cursor-pointer border border-transparent hover:border-slate-700/60 transition"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isOnline
+                          ? 'bg-emerald-400 ring-2 ring-emerald-500/20'
+                          : isBusy
+                          ? 'bg-amber-400 ring-2 ring-amber-500/20'
+                          : 'bg-slate-600'
+                      }`}
+                    />
+                    <span className="text-xs font-medium text-slate-200 group-hover:text-blue-400 transition truncate max-w-[120px]">
+                      {device.name}
                     </span>
-                  )}
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 group-hover:translate-x-0.5 transition" />
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    {device.latency_ms && (
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {device.latency_ms}ms
+                      </span>
+                    )}
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 group-hover:translate-x-0.5 transition" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-1 pl-4 text-[10px] text-slate-500 font-mono">
+                  <span>{device.id}</span>
+                  <span className="truncate max-w-[80px]">{device.tags[0] || 'node'}</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between mt-1 pl-4 text-[10px] text-slate-500 font-mono">
-                <span>{device.id}</span>
-                <span className="truncate max-w-[80px]">{device.tags[0] || 'node'}</span>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       {/* Multi-PC Workspace Hint Footer */}

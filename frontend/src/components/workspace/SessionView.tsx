@@ -8,7 +8,6 @@ import {
   ShieldCheck,
   MousePointer,
   Keyboard,
-  Monitor,
   Wifi,
   Eye,
   MousePointerClick,
@@ -124,7 +123,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   // Handle Mouse Events & Send to Host
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!canvasRef.current || activeSession?.is_simulated || !allowInput) return;
+      if (!canvasRef.current || !allowInput) return;
 
       const now = performance.now();
       // Throttle mouse movement to ~30 FPS to prevent network saturation
@@ -139,45 +138,45 @@ export const SessionView: React.FC<SessionViewProps> = ({
         MouseMove: { x: normX, y: normY },
       });
     },
-    [activeSession?.is_simulated, allowInput]
+    [allowInput]
   );
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (activeSession?.is_simulated || !allowInput) return;
+      if (!allowInput) return;
       deviceService.sendSessionInput({
         MouseDown: { button: e.button },
       });
     },
-    [activeSession?.is_simulated, allowInput]
+    [allowInput]
   );
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (activeSession?.is_simulated || !allowInput) return;
+      if (!allowInput) return;
       deviceService.sendSessionInput({
         MouseUp: { button: e.button },
       });
     },
-    [activeSession?.is_simulated, allowInput]
+    [allowInput]
   );
 
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLCanvasElement>) => {
-      if (activeSession?.is_simulated || !allowInput) return;
+      if (!allowInput) return;
       e.preventDefault();
       const deltaY = Math.sign(e.deltaY) * 120;
       deviceService.sendSessionInput({
         MouseWheel: { delta_y: deltaY },
       });
     },
-    [activeSession?.is_simulated, allowInput]
+    [allowInput]
   );
 
   // Handle Keyboard Events
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (activeSession?.is_simulated || !allowInput) return;
+      if (!allowInput) return;
       if (e.key === 'Tab' || e.key === 'Alt') {
         e.preventDefault();
       }
@@ -185,17 +184,17 @@ export const SessionView: React.FC<SessionViewProps> = ({
         KeyDown: { key_code: e.keyCode },
       });
     },
-    [activeSession?.is_simulated, allowInput]
+    [allowInput]
   );
 
   const handleKeyUp = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (activeSession?.is_simulated || !allowInput) return;
+      if (!allowInput) return;
       deviceService.sendSessionInput({
         KeyUp: { key_code: e.keyCode },
       });
     },
-    [activeSession?.is_simulated, allowInput]
+    [allowInput]
   );
 
   const handleToggleInputPermission = async () => {
@@ -367,7 +366,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
             />
 
             {/* In case no frame has arrived yet in real stream */}
-            {frameCount === 0 && !activeSession.is_simulated && (
+            {frameCount === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm pointer-events-none">
                 <div className="w-10 h-10 rounded-full border-3 border-emerald-500 border-t-transparent animate-spin mb-3" />
                 <p className="text-sm font-semibold text-slate-200">
@@ -376,28 +375,6 @@ export const SessionView: React.FC<SessionViewProps> = ({
                 <p className="text-xs text-slate-400 mt-1 font-mono">
                   Target: {activeSession.target_device_id} (GDI BitBlt ~24 FPS)
                 </p>
-              </div>
-            )}
-
-            {/* Simulation Overlay if testing without live host */}
-            {activeSession.is_simulated && (
-              <div className="absolute inset-0 flex flex-col justify-between p-6 pointer-events-none">
-                <div className="flex justify-between items-center bg-slate-900/80 backdrop-blur px-4 py-2 rounded-lg border border-slate-800 max-w-fit">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 mr-2" />
-                  <span className="text-xs font-semibold text-slate-200">
-                    Simulation Session: {activeSession.target_device_name}
-                  </span>
-                </div>
-                <div className="text-center p-6 max-w-md mx-auto bg-slate-900/90 rounded-2xl border border-slate-800 backdrop-blur">
-                  <Monitor className="w-10 h-10 text-blue-400 mx-auto mb-3" />
-                  <h4 className="text-base font-bold text-slate-100">
-                    Interactive Workspace Ready
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-2">
-                    To start a live stream, connect to a discovered LAN host using port 48120 and the host access password.
-                  </p>
-                </div>
-                <div />
               </div>
             )}
           </div>

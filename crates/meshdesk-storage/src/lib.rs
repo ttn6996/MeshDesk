@@ -99,6 +99,24 @@ impl Storage {
             .map_err(|e| MeshDeskError::StorageError(format!("Migration 2 failed: {e}")))?;
         }
 
+        // Migration 3: Purge legacy mock seed devices
+        if current_version < 3 {
+            conn.execute_batch(
+                "BEGIN TRANSACTION;
+                DELETE FROM devices WHERE id IN (
+                    'MD-1082-9402',
+                    'MD-8321-4921',
+                    'MD-7419-5820',
+                    'MD-6204-1849',
+                    'MD-8192-3021'
+                );
+                INSERT INTO _schema_versions (version, applied_at, description)
+                VALUES (3, datetime('now'), 'Purge legacy mock seed devices');
+                COMMIT;",
+            )
+            .map_err(|e| MeshDeskError::StorageError(format!("Migration 3 failed: {e}")))?;
+        }
+
         Ok(())
     }
 
