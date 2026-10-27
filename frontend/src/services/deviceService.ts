@@ -100,10 +100,29 @@ class HybridDeviceService implements IDeviceService {
   }
 
   async getDevices(): Promise<Device[]> {
+    const LEGACY_MOCK_IDS = new Set([
+      'MD-1082-9402',
+      'MD-8321-4921',
+      'MD-7419-5820',
+      'MD-6204-1849',
+      'MD-8192-3021',
+    ]);
+
     if (this.isTauriEnvironment()) {
       try {
         const devices = await invoke<Device[]>('cmd_list_devices');
-        return devices || [];
+        if (devices) {
+          // Immediately purge any legacy mock devices if found
+          const cleaned = devices.filter((d) => {
+            if (LEGACY_MOCK_IDS.has(d.id)) {
+              invoke('cmd_delete_device', { id: d.id }).catch(() => {});
+              return false;
+            }
+            return true;
+          });
+          return cleaned;
+        }
+        return [];
       } catch (err) {
         console.warn('Tauri IPC failed for list_devices, falling back to local store:', err);
       }
@@ -114,7 +133,12 @@ class HybridDeviceService implements IDeviceService {
       return [];
     }
     try {
-      return JSON.parse(raw);
+      const parsed: Device[] = JSON.parse(raw);
+      const cleaned = parsed.filter((d) => !LEGACY_MOCK_IDS.has(d.id));
+      if (cleaned.length !== parsed.length) {
+        localStorage.setItem(STORAGE_KEY_DEVICES, JSON.stringify(cleaned));
+      }
+      return cleaned;
     } catch {
       return [];
     }
