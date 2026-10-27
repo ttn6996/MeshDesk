@@ -45,6 +45,13 @@ export interface IDeviceService {
     password: string,
     onStateChange?: (state: SessionInfo) => void
   ): Promise<SessionInfo>;
+  connectInternetSession(
+    targetDeviceId: string,
+    targetName: string,
+    targetAddress: string,
+    password: string,
+    onStateChange?: (state: SessionInfo) => void
+  ): Promise<SessionInfo>;
   sendSessionInput(input: InputKind): Promise<void>;
   disconnectSession(sessionId?: string): Promise<void>;
   syncClipboard(text: string): Promise<void>;
@@ -332,6 +339,77 @@ class HybridDeviceService implements IDeviceService {
       onStateChange(notSupportedErr);
     }
     throw new Error('Direct LAN connection requires MeshDesk Tauri runtime.');
+  }
+
+  async connectInternetSession(
+    targetDeviceId: string,
+    targetName: string,
+    targetAddress: string,
+    password: string,
+    onStateChange?: (state: SessionInfo) => void
+  ): Promise<SessionInfo> {
+    if (onStateChange) {
+      onStateChange({
+        session_id: `wan-init-${Date.now()}`,
+        target_device_id: targetDeviceId,
+        target_device_name: targetName,
+        connection_type: 'internet_relay',
+        state: 'connecting',
+        started_at: new Date().toISOString(),
+        bytes_received: 0,
+        bytes_sent: 0,
+        is_simulated: false,
+      });
+    }
+
+    if (this.isTauriEnvironment()) {
+      try {
+        const sessionInfo = await invoke<SessionInfo>('cmd_connect_internet_session', {
+          targetDeviceId,
+          targetName,
+          targetAddress,
+          password,
+        });
+        if (onStateChange) {
+          onStateChange(sessionInfo);
+        }
+        return sessionInfo;
+      } catch (err: any) {
+        const errSession: SessionInfo = {
+          session_id: `wan-err-${Date.now()}`,
+          target_device_id: targetDeviceId,
+          target_device_name: targetName,
+          connection_type: 'internet_relay',
+          state: 'failed',
+          started_at: new Date().toISOString(),
+          bytes_received: 0,
+          bytes_sent: 0,
+          is_simulated: false,
+          error_message: String(err?.message || err),
+        };
+        if (onStateChange) {
+          onStateChange(errSession);
+        }
+        throw err;
+      }
+    }
+
+    const notSupportedErr: SessionInfo = {
+      session_id: `failed-${Date.now()}`,
+      target_device_id: targetDeviceId,
+      target_device_name: targetName,
+      connection_type: 'internet_relay',
+      state: 'failed',
+      started_at: new Date().toISOString(),
+      bytes_received: 0,
+      bytes_sent: 0,
+      is_simulated: false,
+      error_message: 'Internet connection requires MeshDesk Tauri runtime.',
+    };
+    if (onStateChange) {
+      onStateChange(notSupportedErr);
+    }
+    throw new Error('Internet connection requires MeshDesk Tauri runtime.');
   }
 
   async sendSessionInput(input: InputKind): Promise<void> {

@@ -163,7 +163,7 @@ export const App: React.FC = () => {
   const handleExecuteConnect = async (
     deviceId: string,
     password: string,
-    _mode: ConnectionMode
+    mode: ConnectionMode
   ) => {
     setIsConnectOpen(false);
 
@@ -181,25 +181,47 @@ export const App: React.FC = () => {
     }
 
     try {
-      await deviceService.connectLanSession(
-        deviceId,
-        targetName,
-        targetAddress,
-        password,
-        (updatedSession) => {
-          setActiveSessions((prev) => {
-            const index = prev.findIndex((s) => s.session_id === updatedSession.session_id);
-            if (index >= 0) {
-              const next = [...prev];
-              next[index] = updatedSession;
-              return next;
-            } else {
-              return [...prev, updatedSession];
-            }
-          });
-          setActiveSessionId(updatedSession.session_id);
-        }
-      );
+      if (mode === 'internet_only') {
+        await deviceService.connectInternetSession(
+          deviceId,
+          targetName,
+          targetAddress,
+          password,
+          (updatedSession) => {
+            setActiveSessions((prev) => {
+              const index = prev.findIndex((s) => s.session_id === updatedSession.session_id);
+              if (index >= 0) {
+                const next = [...prev];
+                next[index] = updatedSession;
+                return next;
+              } else {
+                return [...prev, updatedSession];
+              }
+            });
+            setActiveSessionId(updatedSession.session_id);
+          }
+        );
+      } else {
+        await deviceService.connectLanSession(
+          deviceId,
+          targetName,
+          targetAddress,
+          password,
+          (updatedSession) => {
+            setActiveSessions((prev) => {
+              const index = prev.findIndex((s) => s.session_id === updatedSession.session_id);
+              if (index >= 0) {
+                const next = [...prev];
+                next[index] = updatedSession;
+                return next;
+              } else {
+                return [...prev, updatedSession];
+              }
+            });
+            setActiveSessionId(updatedSession.session_id);
+          }
+        );
+      }
     } catch (err) {
       console.error('Connection attempt failed:', err);
     }
@@ -320,6 +342,7 @@ export const App: React.FC = () => {
               }}
               onScanLan={handleScanLan}
               isScanningLan={isScanningLan}
+              onOpenConnectDialog={() => setIsConnectOpen(true)}
             />
           )}
         </main>

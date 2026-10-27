@@ -18,16 +18,32 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::RwLock;
 
 pub mod session;
+pub mod web_viewer;
 pub use session::{
     ClientSession, HostIncomingSessionEvent, HostServer, HostSessionDisconnectedEvent,
     SessionFrameEvent,
 };
+pub use web_viewer::{WebViewerServer, DEFAULT_WEB_VIEWER_PORT};
+
+/// Get primary local LAN IPv4 address without external transmission
+pub fn get_local_lan_ip() -> String {
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                return addr.ip().to_string();
+            }
+        }
+    }
+    "127.0.0.1".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostAccessCredentials {
     pub device_id: String,
     pub access_password: String,
     pub listen_port: u16,
+    pub web_viewer_port: u16,
+    pub local_ip: String,
     pub allow_remote_control: bool,
     pub allow_lan_discovery: bool,
 }
@@ -45,6 +61,7 @@ pub struct AppState {
     pub storage: Arc<Storage>,
     pub discovery: Arc<DiscoveryService>,
     pub host_server: Arc<HostServer>,
+    pub web_viewer: Arc<WebViewerServer>,
     pub signaling_server: Arc<SignalingServer>,
     pub signaling_client: Arc<RwLock<Option<SignalingClient>>>,
     pub active_client_session: Arc<RwLock<Option<ClientSession>>>,
@@ -108,6 +125,12 @@ impl AppState {
             Arc::clone(&allow_remote_control),
         ));
 
+        let web_viewer = Arc::new(WebViewerServer::new(
+            &local_id,
+            DEFAULT_WEB_VIEWER_PORT,
+            Arc::clone(&allow_remote_control),
+        ));
+
         let signaling_addr = std::net::SocketAddr::from(([0, 0, 0, 0], DEFAULT_SIGNALING_PORT));
         let signaling_server = Arc::new(SignalingServer::new(signaling_addr));
         let signaling_client = Arc::new(RwLock::new(None));
@@ -119,6 +142,7 @@ impl AppState {
             storage: Arc::new(storage),
             discovery,
             host_server,
+            web_viewer,
             signaling_server,
             signaling_client,
             active_client_session: Arc::new(RwLock::new(None)),
@@ -154,6 +178,12 @@ impl AppState {
             Arc::clone(&allow_remote_control),
         ));
 
+        let web_viewer = Arc::new(WebViewerServer::new(
+            &local_id,
+            DEFAULT_WEB_VIEWER_PORT,
+            Arc::clone(&allow_remote_control),
+        ));
+
         let signaling_addr = std::net::SocketAddr::from(([0, 0, 0, 0], DEFAULT_SIGNALING_PORT));
         let signaling_server = Arc::new(SignalingServer::new(signaling_addr));
         let signaling_client = Arc::new(RwLock::new(None));
@@ -165,6 +195,7 @@ impl AppState {
             storage,
             discovery,
             host_server,
+            web_viewer,
             signaling_server,
             signaling_client,
             active_client_session: Arc::new(RwLock::new(None)),
@@ -353,6 +384,8 @@ pub mod commands {
             device_id: dev_id,
             access_password: password,
             listen_port: settings.local_listen_port,
+            web_viewer_port: state.web_viewer.port(),
+            local_ip: get_local_lan_ip(),
             allow_remote_control: state.allow_remote_control.load(Ordering::Relaxed),
             allow_lan_discovery: state.allow_lan_discovery.load(Ordering::Relaxed),
         })
@@ -425,6 +458,59 @@ pub mod commands {
         password: String,
     ) -> std::result::Result<SessionInfo, String> {
         connect_lan_session(
+            app_handle,
+            state,
+            target_device_id,
+            target_name,
+            target_address,
+            password,
+        )
+        .await
+    }
+
+    #[tauri::command]
+    pub async fn connect_internet_session(
+        app_handle: AppHandle,
+        state: State<'_, AppState>,
+        target_device_id: String,
+        target_name: String,
+        target_address: String,
+        password: String,
+    ) -> std::result::Result<SessionInfo, String> {
+        let my_id = state.get_local_identity().device_id;
+        
+        let client_session = session::connect_to_remote_host(
+            app_handle,
+            &target_address,
+            &target_device_id,
+            &target_name,
+            &my_id,
+            &password,
+        )
+        .await
+        .map_err(|e| format!("Internet remote connection failed: {e}"))?;
+
+        let mut session_info =
+            SessionInfo::new(&target_device_id, &target_name, ConnectionType::InternetRelay, false);
+        session_info.session_id = client_session.session_id.clone();
+        session_info.state = SessionState::Connected;
+
+        let mut guard = state.active_client_session.write().await;
+        *guard = Some(client_session);
+
+        Ok(session_info)
+    }
+
+    #[tauri::command]
+    pub async fn cmd_connect_internet_session(
+        app_handle: AppHandle,
+        state: State<'_, AppState>,
+        target_device_id: String,
+        target_name: String,
+        target_address: String,
+        password: String,
+    ) -> std::result::Result<SessionInfo, String> {
+        connect_internet_session(
             app_handle,
             state,
             target_device_id,
@@ -669,10 +755,12 @@ pub fn run() {
         }
     };
 
-    // Auto-start background discovery, host server, and initial subnet probe
+    // Auto-start background discovery, host server, HTML5 web viewer, and signaling
     let discovery = Arc::clone(&app_state.discovery);
     let allow_discovery = Arc::clone(&app_state.allow_lan_discovery);
     let host_server = Arc::clone(&app_state.host_server);
+    let web_viewer = Arc::clone(&app_state.web_viewer);
+    let signaling_server = Arc::clone(&app_state.signaling_server);
 
     tauri::async_runtime::spawn(async move {
         if let Err(e) = discovery.start(allow_discovery).await {
@@ -692,13 +780,30 @@ pub fn run() {
         }
     });
 
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = web_viewer.start().await {
+            log::warn!("Could not start HTML5 Web Viewer server: {e}");
+        }
+    });
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = signaling_server.run().await {
+            log::warn!("Signaling server stopped: {e}");
+        }
+    });
+
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle().clone();
             let state: State<'_, AppState> = app.state();
             let host = Arc::clone(&state.host_server);
+            let web = Arc::clone(&state.web_viewer);
+            let h1 = handle.clone();
             tauri::async_runtime::spawn(async move {
-                host.set_app_handle(handle).await;
+                host.set_app_handle(h1).await;
+            });
+            tauri::async_runtime::spawn(async move {
+                web.set_app_handle(handle).await;
             });
             Ok(())
         })
@@ -726,6 +831,8 @@ pub fn run() {
             commands::cmd_generate_new_access_password,
             commands::connect_lan_session,
             commands::cmd_connect_lan_session,
+            commands::connect_internet_session,
+            commands::cmd_connect_internet_session,
             commands::send_session_input,
             commands::cmd_send_session_input,
             commands::disconnect_session,

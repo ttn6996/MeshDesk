@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MeshDesk - Web Viewer</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    body {
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+    header {
+      height: 48px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-badge {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #2563eb, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+      color: white;
+    }
+    .brand-title {
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: -0.3px;
+    }
+    .badge-web {
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .telemetry {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 12px;
+      color: #94a3b8;
+      font-family: monospace;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      display: inline-block;
+      box-shadow: 0 0 8px #10b981;
+    }
+    .status-dot.disconnected {
+      background: #ef4444;
+      box-shadow: 0 0 8px #ef4444;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn:hover {
+      background: #334155;
+      color: white;
+    }
+    .btn-active {
+      background: #2563eb;
+      border-color: #3b82f6;
+      color: white;
+    }
+    #viewport {
+      flex: 1;
+      position: relative;
+      background: #020617;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #displayCanvas {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      cursor: crosshair;
+    }
+    #overlayMessage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(11, 15, 25, 0.85);
+      backdrop-filter: blur(4px);
+      z-index: 5;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(59, 130, 246, 0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .instructions {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid #334155;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 11px;
+      color: #94a3b8;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo-badge">M</div>
+      <span class="brand-title">MeshDesk</span>
+      <span class="badge-web">HTML5 Web Viewer</span>
+    </div>
+
+    <div class="telemetry">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+      <span id="fpsMeter">0 FPS</span>
+    </div>
+
+    <div class="controls">
+      <button id="toggleControlBtn" class="btn btn-active">🎮 Control: ON</button>
+      <button id="fullscreenBtn" class="btn">⛶ Fullscreen</button>
+    </div>
+  </header>
+
+  <div id="viewport">
+    <div id="overlayMessage">
+      <div class="spinner"></div>
+      <h3 id="overlayTitle" style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">Connecting to MeshDesk Host...</h3>
+      <p id="overlaySub" style="font-size: 12px; color: #94a3b8;">Streaming desktop display in real-time</p>
+    </div>
+
+    <canvas id="displayCanvas" width="1920" height="1080"></canvas>
+    <div class="instructions">💡 Chạm / nhấp chuột để điều khiển • Hỗ trợ cả trên điện thoại, iPad và máy tính</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('displayCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const fpsMeter = document.getElementById('fpsMeter');
+    const overlay = document.getElementById('overlayMessage');
+    const toggleControlBtn = document.getElementById('toggleControlBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    let allowControl = true;
+    let ws = null;
+    let framesThisSec = 0;
+    let lastFpsUpdate = Date.now();
+    let currentHostWidth = 1920;
+    let currentHostHeight = 1080;
+
+    // Connect WebSocket
+    function connect() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}/ws`;
+
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        statusDot.className = 'status-dot';
+        statusText.innerText = 'Connected';
+        overlay.style.display = 'none';
+      };
+
+      ws.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) {
+          framesThisSec++;
+          const blob = new Blob([event.data], { type: 'image/jpeg' });
+          const url = URL.createObjectURL(blob);
+          const img = new Image();
+          img.onload = () => {
+            if (canvas.width !== img.width || canvas.height !== img.height) {
+              canvas.width = img.width;
+              canvas.height = img.height;
+              currentHostWidth = img.width;
+              currentHostHeight = img.height;
+            }
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(url);
+          };
+          img.src = url;
+        }
+      };
+
+      ws.onclose = () => {
+        statusDot.className = 'status-dot disconnected';
+        statusText.innerText = 'Disconnected';
+        overlay.style.display = 'flex';
+        document.getElementById('overlayTitle').innerText = 'Connection Closed';
+        document.getElementById('overlaySub').innerText = 'Retrying in 2 seconds...';
+        setTimeout(connect, 2000);
+      };
+
+      ws.onerror = (err) => {
+        console.warn('WebSocket error:', err);
+      };
+    }
+
+    // FPS Counter
+    setInterval(() => {
+      const now = Date.now();
+      const elapsed = (now - lastFpsUpdate) / 1000;
+      const fps = Math.round(framesThisSec / elapsed);
+      fpsMeter.innerText = `${fps} FPS`;
+      framesThisSec = 0;
+      lastFpsUpdate = now;
+    }, 1000);
+
+    // Coordinate conversion
+    function getNormalizedCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+      
+      const x_norm = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const y_norm = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+      return { x_norm, y_norm };
+    }
+
+    function sendInput(data) {
+      if (!allowControl || !ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify(data));
+    }
+
+    // Mouse Events
+    let lastMoveSent = 0;
+    canvas.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      if (now - lastMoveSent < 20) return; // limit to 50 Hz
+      lastMoveSent = now;
+      const { x_norm, y_norm } = getNormalizedCoords(e);
+      sendInput({ type: 'mousemove', x_norm, y_norm });
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const { x_norm, y_norm } = getNormalizedCoords(e);
+      sendInput({ type: 'mousemove', x_norm, y_norm });
+      sendInput({ type: 'mousedown', button: e.button });
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      sendInput({ type: 'mouseup', button: e.button });
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      sendInput({ type: 'wheel', delta: Math.sign(e.deltaY) * 120 });
+    }, { passive: false });
+
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Touch Events (Phones & Tablets)
+    let isTouching = false;
+    canvas.addEventListener('touchstart', (e) => {
+      isTouching = true;
+      const { x_norm, y_norm } = getNormalizedCoords(e);
+      sendInput({ type: 'mousemove', x_norm, y_norm });
+      sendInput({ type: 'mousedown', button: 0 });
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (!isTouching) return;
+      const { x_norm, y_norm } = getNormalizedCoords(e);
+      sendInput({ type: 'mousemove', x_norm, y_norm });
+    });
+
+    canvas.addEventListener('touchend', (e) => {
+      isTouching = false;
+      sendInput({ type: 'mouseup', button: 0 });
+    });
+
+    // Keyboard Events
+    window.addEventListener('keydown', (e) => {
+      if (['F11', 'F12'].includes(e.key)) return;
+      sendInput({ type: 'keydown', vk: e.keyCode, key: e.key });
+    });
+
+    window.addEventListener('keyup', (e) => {
+      sendInput({ type: 'keyup', vk: e.keyCode, key: e.key });
+    });
+
+    // UI Buttons
+    toggleControlBtn.addEventListener('click', () => {
+      allowControl = !allowControl;
+      if (allowControl) {
+        toggleControlBtn.className = 'btn btn-active';
+        toggleControlBtn.innerText = '🎮 Control: ON';
+      } else {
+        toggleControlBtn.className = 'btn';
+        toggleControlBtn.innerText = '👁️ View Only';
+      }
+    });
+
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    // Start connection
+    connect();
+  </script>
+</body>
+</html>

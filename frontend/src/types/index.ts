@@ -80,8 +80,13 @@ export interface DiscoveredNode {
 export interface HostAccessCredentials {
   device_id: string;
   access_password: string;
-  port: number;
-  is_accepting_connections: boolean;
+  listen_port?: number;
+  port?: number;
+  web_viewer_port?: number;
+  local_ip?: string;
+  allow_remote_control?: boolean;
+  allow_lan_discovery?: boolean;
+  is_accepting_connections?: boolean;
 }
 
 export interface SessionFrameEvent {

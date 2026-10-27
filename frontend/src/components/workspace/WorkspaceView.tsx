@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Grid,
   List,
@@ -8,9 +8,17 @@ import {
   Clock,
   Plus,
   Radar,
+  Wifi,
+  Globe,
+  Smartphone,
+  Share2,
+  Copy,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
-import { Device } from '../../types';
+import { Device, HostAccessCredentials } from '../../types';
 import { DeviceCard } from './DeviceCard';
+import { deviceService } from '../../services/deviceService';
 
 interface WorkspaceViewProps {
   devices: Device[];
@@ -24,6 +32,7 @@ interface WorkspaceViewProps {
   onOpenAddDevice: () => void;
   onScanLan?: () => void;
   isScanningLan?: boolean;
+  onOpenConnectDialog?: () => void;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -38,8 +47,25 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onOpenAddDevice,
   onScanLan,
   isScanningLan,
+  onOpenConnectDialog,
 }) => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [credentials, setCredentials] = useState<HostAccessCredentials | null>(null);
+  const [copiedWeb, setCopiedWeb] = useState(false);
+
+  useEffect(() => {
+    deviceService.getHostAccessCredentials().then(setCredentials);
+  }, []);
+
+  const webViewerUrl = credentials?.local_ip
+    ? `http://${credentials.local_ip}:${credentials.web_viewer_port || 48123}`
+    : 'http://127.0.0.1:48123';
+
+  const handleCopyWebLink = () => {
+    navigator.clipboard.writeText(webViewerUrl);
+    setCopiedWeb(true);
+    setTimeout(() => setCopiedWeb(false), 2000);
+  };
 
   // Filter devices
   const filtered = devices.filter((d) => {
@@ -70,6 +96,112 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      {/* 3 Connection Modes Hub Banner */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Card 1: LAN Direct */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-950/40 to-slate-900 border border-blue-800/40 flex flex-col justify-between shadow-lg">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                <Wifi className="w-4 h-4" />
+                Mạng Cục Bộ (LAN)
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                1-Click Connect
+              </span>
+            </div>
+            <h4 className="text-sm font-bold text-white mb-1">Kết nối siêu tốc cùng Wi-Fi</h4>
+            <p className="text-xs text-slate-400">
+              Tự động quét các máy tính cùng mạng. Bấm kết nối trực tiếp không cần mật khẩu.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-xs text-slate-400 font-medium">
+              Tìm thấy: <strong className="text-emerald-400">{onlineCount} thiết bị</strong>
+            </span>
+            <button
+              onClick={onScanLan}
+              disabled={isScanningLan}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 transition disabled:opacity-50"
+            >
+              <Radar className={`w-3.5 h-3.5 ${isScanningLan ? 'animate-spin' : ''}`} />
+              <span>{isScanningLan ? 'Đang quét...' : 'Quét LAN'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Card 2: Internet Remote */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/40 to-slate-900 border border-indigo-800/40 flex flex-col justify-between shadow-lg">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                <Globe className="w-4 h-4" />
+                Từ Xa (Internet)
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                Signaling Online
+              </span>
+            </div>
+            <h4 className="text-sm font-bold text-white mb-1">Điều khiển xuyên mạng</h4>
+            <p className="text-xs text-slate-400">
+              Kết nối từ xa đến bất kỳ máy tính nào qua Internet bằng Device ID và Mật khẩu truy cập.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+            <span className="text-xs text-slate-400 font-medium">
+              Signaling: <strong className="text-indigo-400">Sẵn sàng</strong>
+            </span>
+            <button
+              onClick={onOpenConnectDialog}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Kết nối từ xa</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Card 3: Web Viewer */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/40 to-slate-900 border border-emerald-800/40 flex flex-col justify-between shadow-lg">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4" />
+                Web Viewer (Trình duyệt)
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Không cần cài app
+              </span>
+            </div>
+            <h4 className="text-sm font-bold text-white mb-1">Dùng trên điện thoại, iPad</h4>
+            <p className="text-xs text-slate-400">
+              Mở link trên Chrome/Safari bất kỳ máy nào để xem & chạm/chuột điều khiển máy tính này.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+            <div className="text-[11px] font-mono text-emerald-300 truncate max-w-[150px]">
+              {webViewerUrl}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleCopyWebLink}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold flex items-center gap-1 transition"
+                title="Sao chép link Web Viewer"
+              >
+                {copiedWeb ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+              <button
+                onClick={() => window.open(webViewerUrl, '_blank')}
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 transition"
+                title="Mở ngay trong trình duyệt"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Overview Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
