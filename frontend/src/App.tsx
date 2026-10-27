@@ -118,10 +118,9 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Handle device connect (from card or dialog)
+  // 1-Click Direct Connect (similar to spacedesk)
   const handleInitiateConnect = (device: Device) => {
-    setConnectTargetDevice(device);
-    setIsConnectOpen(true);
+    handleExecuteConnect(device.id, '', 'auto');
   };
 
   const handleExecuteConnect = async (
@@ -131,10 +130,18 @@ export const App: React.FC = () => {
   ) => {
     setIsConnectOpen(false);
 
-    // Look up target or generate placeholder
+    // Look up target or handle direct IP input
     const existing = devices.find((d) => d.id === deviceId);
-    const targetName = existing ? existing.name : `Host-${deviceId.slice(3, 7)}`;
-    const targetAddress = existing?.hostname || '127.0.0.1:48120';
+    const targetName = existing
+      ? existing.name
+      : deviceId.includes('.')
+      ? `Host (${deviceId})`
+      : `Host-${deviceId.slice(3, 7)}`;
+
+    let targetAddress = existing?.hostname || '127.0.0.1:48120';
+    if (!existing && deviceId.includes('.')) {
+      targetAddress = deviceId.includes(':') ? deviceId : `${deviceId}:48120`;
+    }
 
     try {
       await deviceService.connectLanSession(

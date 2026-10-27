@@ -151,7 +151,9 @@ pub async fn connect_to_remote_host(
 ) -> Result<ClientSession> {
     info!("Connecting to remote MeshDesk host at {host_addr}...");
     let stream = TcpStream::connect(host_addr).await.map_err(|e| {
-        MeshDeskError::NetworkError(format!("Failed to connect to host {host_addr}: {e}"))
+        MeshDeskError::NetworkError(format!(
+            "Could not connect to {host_addr}. Ensure MeshDesk is running on target machine ({e})"
+        ))
     })?;
 
     let (mut reader, mut writer) = stream.into_split();
@@ -433,6 +435,7 @@ async fn handle_incoming_controller(
     access_password: String,
     allow_control: Arc<AtomicBool>,
 ) -> Result<()> {
+    let peer_addr = stream.peer_addr().ok();
     let (mut reader, mut writer) = stream.into_split();
 
     // 1. Read Hello
@@ -475,7 +478,23 @@ async fn handle_incoming_controller(
             .to_hex()
             .to_string();
 
-    if received_proof != expected_proof {
+    // Support 1-Click LAN Direct connection (no password needed within same local private network)
+    let is_private_ip = match peer_addr {
+        Some(addr) => match addr.ip() {
+            std::net::IpAddr::V4(ip) => ip.is_private() || ip.is_loopback(),
+            std::net::IpAddr::V6(ip) => ip.is_loopback(),
+        },
+        None => false,
+    };
+
+    let lan_empty_proof = blake3::hash(format!("{}:{}:{}", salt, "", host_nonce).as_bytes())
+        .to_hex()
+        .to_string();
+
+    let is_authenticated =
+        received_proof == expected_proof || (is_private_ip && received_proof == lan_empty_proof);
+
+    if !is_authenticated {
         let fail = Message::AuthFailure {
             code: "INVALID_CREDENTIALS".into(),
             message: "Access password challenge verification failed".into(),

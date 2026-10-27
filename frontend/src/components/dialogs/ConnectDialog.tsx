@@ -24,22 +24,15 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanId = deviceId.trim().toUpperCase();
+    const cleanId = deviceId.trim();
 
-    // Syntax validation: MD-XXXX-XXXX
-    const pattern = /^MD-\d{4}-\d{4}$/;
-    if (!pattern.test(cleanId)) {
-      setError('Device ID must be in format MD-XXXX-XXXX (e.g. MD-8192-3021)');
-      return;
-    }
-
-    if (!password.trim()) {
-      setError('Please enter the temporary access password shown on target host');
+    if (!cleanId) {
+      setError('Please enter target IP address (e.g. 192.168.0.101) or Device ID');
       return;
     }
 
     setError(null);
-    onConnect(cleanId, password, mode);
+    onConnect(cleanId, password.trim(), mode);
   };
 
   return (
@@ -74,38 +67,39 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
           )}
 
           {/* Device ID Input */}
+          {/* Target IP or Device ID Input */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Target Device ID
+              Target IP Address or Device ID
             </label>
             <div className="relative">
               <input
                 type="text"
-                placeholder="MD-8192-3021"
+                placeholder="192.168.0.101 or MD-9236-2059"
                 value={deviceId}
                 onChange={(e) => {
-                  setDeviceId(e.target.value.toUpperCase());
+                  setDeviceId(e.target.value);
                   setError(null);
                 }}
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 font-mono tracking-wider placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition uppercase"
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 font-mono tracking-wider placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 autoFocus
               />
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
-              Collision-resistant 8-digit hardware identity
+              Direct IP on local Wi-Fi / LAN, or Device ID for Internet
             </p>
           </div>
 
           {/* Access Password */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-              Temporary Access Password
+              Access Password (Optional on LAN)
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
               <input
                 type="password"
-                placeholder="••••••••"
+                placeholder="Leave empty for 1-click LAN connection"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
@@ -115,7 +109,7 @@ export const ConnectDialog: React.FC<ConnectDialogProps> = ({
               />
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
-              Transmitted securely via zero-knowledge challenge-response (never plaintext)
+              Computers on the same local Wi-Fi connect directly in 1 click
             </p>
           </div>
 
