@@ -10,10 +10,11 @@ use meshdesk_discovery::{
 };
 use meshdesk_identity::{IdentityInfo, NodeIdentity};
 use meshdesk_protocol::InputKind;
+use meshdesk_signaling::{SignalingClient, SignalingServer, DEFAULT_SIGNALING_PORT};
 use meshdesk_storage::Storage;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::sync::RwLock;
 
 pub mod session;
@@ -28,14 +29,26 @@ pub struct HostAccessCredentials {
     pub allow_lan_discovery: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignalingStatusInfo {
+    pub is_server_running: bool,
+    pub is_client_connected: bool,
+    pub server_addr: String,
+    pub online_peers_count: usize,
+}
+
 pub struct AppState {
     pub identity: Arc<NodeIdentity>,
     pub storage: Arc<Storage>,
     pub discovery: Arc<DiscoveryService>,
     pub host_server: Arc<HostServer>,
+    pub signaling_server: Arc<SignalingServer>,
+    pub signaling_client: Arc<RwLock<Option<SignalingClient>>>,
     pub active_client_session: Arc<RwLock<Option<ClientSession>>>,
     pub allow_remote_control: Arc<AtomicBool>,
     pub allow_lan_discovery: Arc<AtomicBool>,
+    pub is_view_only: Arc<AtomicBool>,
+    pub active_tab_session_id: Arc<RwLock<Option<String>>>,
 }
 
 impl AppState {
@@ -92,14 +105,24 @@ impl AppState {
             Arc::clone(&allow_remote_control),
         ));
 
+        let signaling_addr = std::net::SocketAddr::from(([0, 0, 0, 0], DEFAULT_SIGNALING_PORT));
+        let signaling_server = Arc::new(SignalingServer::new(signaling_addr));
+        let signaling_client = Arc::new(RwLock::new(None));
+        let is_view_only = Arc::new(AtomicBool::new(false));
+        let active_tab_session_id = Arc::new(RwLock::new(None));
+
         Ok(Self {
             identity: Arc::new(identity),
             storage: Arc::new(storage),
             discovery,
             host_server,
+            signaling_server,
+            signaling_client,
             active_client_session: Arc::new(RwLock::new(None)),
             allow_remote_control,
             allow_lan_discovery,
+            is_view_only,
+            active_tab_session_id,
         })
     }
 
@@ -128,14 +151,24 @@ impl AppState {
             Arc::clone(&allow_remote_control),
         ));
 
+        let signaling_addr = std::net::SocketAddr::from(([0, 0, 0, 0], DEFAULT_SIGNALING_PORT));
+        let signaling_server = Arc::new(SignalingServer::new(signaling_addr));
+        let signaling_client = Arc::new(RwLock::new(None));
+        let is_view_only = Arc::new(AtomicBool::new(false));
+        let active_tab_session_id = Arc::new(RwLock::new(None));
+
         Ok(Self {
             identity,
             storage,
             discovery,
             host_server,
+            signaling_server,
+            signaling_client,
             active_client_session: Arc::new(RwLock::new(None)),
             allow_remote_control,
             allow_lan_discovery,
+            is_view_only,
+            active_tab_session_id,
         })
     }
 
@@ -429,6 +462,158 @@ pub mod commands {
     ) -> std::result::Result<(), String> {
         disconnect_session(state).await
     }
+
+    // --- Milestone 5: Clipboard Sync, Permissions, Multi-Session Tab Isolation ---
+
+    #[tauri::command]
+    pub async fn sync_clipboard(
+        state: State<'_, AppState>,
+        text: String,
+    ) -> std::result::Result<(), String> {
+        let guard = state.active_client_session.read().await;
+        if let Some(session) = &*guard {
+            session
+                .sync_clipboard(&text)
+                .await
+                .map_err(|e| e.to_string())
+        } else {
+            Err("No active remote desktop session to sync clipboard".into())
+        }
+    }
+
+    #[tauri::command]
+    pub async fn cmd_sync_clipboard(
+        state: State<'_, AppState>,
+        text: String,
+    ) -> std::result::Result<(), String> {
+        sync_clipboard(state, text).await
+    }
+
+    #[tauri::command]
+    pub async fn set_session_permission(
+        state: State<'_, AppState>,
+        allow_input: bool,
+    ) -> std::result::Result<(), String> {
+        state.is_view_only.store(!allow_input, Ordering::SeqCst);
+        let guard = state.active_client_session.read().await;
+        if let Some(session) = &*guard {
+            session.set_view_only(!allow_input);
+        }
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn cmd_set_session_permission(
+        state: State<'_, AppState>,
+        allow_input: bool,
+    ) -> std::result::Result<(), String> {
+        set_session_permission(state, allow_input).await
+    }
+
+    #[tauri::command]
+    pub async fn set_active_session_tab(
+        state: State<'_, AppState>,
+        session_id: String,
+    ) -> std::result::Result<(), String> {
+        let mut tab_guard = state.active_tab_session_id.write().await;
+        *tab_guard = Some(session_id.clone());
+        let session_guard = state.active_client_session.read().await;
+        if let Some(session) = &*session_guard {
+            session.set_active_tab(session.session_id == session_id);
+        }
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn cmd_set_active_session_tab(
+        state: State<'_, AppState>,
+        session_id: String,
+    ) -> std::result::Result<(), String> {
+        set_active_session_tab(state, session_id).await
+    }
+
+    #[tauri::command]
+    pub async fn kill_all_sessions(state: State<'_, AppState>) -> std::result::Result<(), String> {
+        let mut guard = state.active_client_session.write().await;
+        if let Some(mut session) = guard.take() {
+            session.disconnect();
+        }
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn cmd_kill_all_sessions(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<(), String> {
+        kill_all_sessions(state).await
+    }
+
+    // --- Milestone 4: Internet Signaling & NAT Traversal ---
+
+    #[tauri::command]
+    pub async fn get_signaling_status(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<SignalingStatusInfo, String> {
+        let is_server_running = state.signaling_server.is_running();
+        let count = state.signaling_server.registered_peer_count().await;
+        let client_guard = state.signaling_client.read().await;
+        let is_client_connected = client_guard
+            .as_ref()
+            .map(|c| c.is_connected())
+            .unwrap_or(false);
+
+        Ok(SignalingStatusInfo {
+            is_server_running,
+            is_client_connected,
+            server_addr: format!("ws://127.0.0.1:{DEFAULT_SIGNALING_PORT}"),
+            online_peers_count: count,
+        })
+    }
+
+    #[tauri::command]
+    pub async fn cmd_get_signaling_status(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<SignalingStatusInfo, String> {
+        get_signaling_status(state).await
+    }
+
+    #[tauri::command]
+    pub async fn connect_signaling(
+        app_handle: AppHandle,
+        state: State<'_, AppState>,
+        url: String,
+    ) -> std::result::Result<(), String> {
+        let identity = state.get_local_identity();
+        let client = SignalingClient::connect(
+            &url,
+            &identity.device_id,
+            "Workstation",
+            &identity.public_key_b64,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let mut sub = client.subscribe();
+        let app = app_handle.clone();
+        tokio::spawn(async move {
+            while let Ok(msg) = sub.recv().await {
+                let _ = app.emit("signaling-event", msg);
+            }
+        });
+
+        let mut guard = state.signaling_client.write().await;
+        *guard = Some(client);
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn cmd_connect_signaling(
+        app_handle: AppHandle,
+        state: State<'_, AppState>,
+        url: String,
+    ) -> std::result::Result<(), String> {
+        connect_signaling(app_handle, state, url).await
+    }
 }
 
 pub fn run() {
@@ -487,6 +672,18 @@ pub fn run() {
             commands::cmd_send_session_input,
             commands::disconnect_session,
             commands::cmd_disconnect_session,
+            commands::sync_clipboard,
+            commands::cmd_sync_clipboard,
+            commands::set_session_permission,
+            commands::cmd_set_session_permission,
+            commands::set_active_session_tab,
+            commands::cmd_set_active_session_tab,
+            commands::kill_all_sessions,
+            commands::cmd_kill_all_sessions,
+            commands::get_signaling_status,
+            commands::cmd_get_signaling_status,
+            commands::connect_signaling,
+            commands::cmd_connect_signaling,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

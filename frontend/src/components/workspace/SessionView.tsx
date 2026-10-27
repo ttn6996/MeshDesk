@@ -10,6 +10,10 @@ import {
   Keyboard,
   Monitor,
   Wifi,
+  Eye,
+  MousePointerClick,
+  ClipboardCopy,
+  ClipboardCheck,
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { SessionFrameEvent, SessionInfo } from '../../types';
@@ -36,6 +40,8 @@ export const SessionView: React.FC<SessionViewProps> = ({
   });
   const [frameCount, setFrameCount] = useState<number>(0);
   const [isInputFocused, setIsInputFocused] = useState<boolean>(true);
+  const [allowInput, setAllowInput] = useState<boolean>(true);
+  const [clipboardToast, setClipboardToast] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -44,13 +50,21 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
   const activeSession = sessions.find((s) => s.session_id === activeSessionId) || sessions[0];
 
-  // Subscribe to incoming Tauri video frames
+  // Notify backend of active tab change for background dynamic frame throttling
+  useEffect(() => {
+    if (activeSession) {
+      deviceService.setActiveSessionTab(activeSession.session_id);
+    }
+  }, [activeSession?.session_id]);
+
+  // Subscribe to incoming Tauri video frames and clipboard events
   useEffect(() => {
     if (!deviceService.isTauriEnvironment() || !activeSession || activeSession.state !== 'connected') {
       return;
     }
 
-    let unlistenFn: (() => void) | null = null;
+    let unlistenFrame: (() => void) | null = null;
+    let unlistenClipboard: (() => void) | null = null;
 
     listen<SessionFrameEvent>('session-frame', (event) => {
       const payload = event.payload;
@@ -82,9 +96,16 @@ export const SessionView: React.FC<SessionViewProps> = ({
       };
       img.src = `data:image/jpeg;base64,${payload.data_b64}`;
     }).then((unlisten) => {
-      unlistenFn = unlisten;
+      unlistenFrame = unlisten;
     }).catch((err) => {
       console.warn('Failed to attach session-frame listener:', err);
+    });
+
+    listen<string>('session-clipboard', (event) => {
+      setClipboardToast(`Remote clipboard: "${event.payload.slice(0, 24)}..."`);
+      setTimeout(() => setClipboardToast(null), 3500);
+    }).then((unlisten) => {
+      unlistenClipboard = unlisten;
     });
 
     // FPS calculation timer
@@ -94,7 +115,8 @@ export const SessionView: React.FC<SessionViewProps> = ({
     }, 1000);
 
     return () => {
-      if (unlistenFn) unlistenFn();
+      if (unlistenFrame) unlistenFrame();
+      if (unlistenClipboard) unlistenClipboard();
       clearInterval(fpsInterval);
     };
   }, [activeSession?.session_id, activeSession?.state]);
@@ -102,10 +124,10 @@ export const SessionView: React.FC<SessionViewProps> = ({
   // Handle Mouse Events & Send to Host
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!canvasRef.current || activeSession?.is_simulated) return;
+      if (!canvasRef.current || activeSession?.is_simulated || !allowInput) return;
 
       const now = performance.now();
-      // Throttle mouse movement to ~30 FPS (every 33ms) to prevent network saturation
+      // Throttle mouse movement to ~30 FPS to prevent network saturation
       if (now - lastMouseTimeRef.current < 33) return;
       lastMouseTimeRef.current = now;
 
@@ -117,46 +139,45 @@ export const SessionView: React.FC<SessionViewProps> = ({
         MouseMove: { x: normX, y: normY },
       });
     },
-    [activeSession?.is_simulated]
+    [activeSession?.is_simulated, allowInput]
   );
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (activeSession?.is_simulated) return;
+      if (activeSession?.is_simulated || !allowInput) return;
       deviceService.sendSessionInput({
         MouseDown: { button: e.button },
       });
     },
-    [activeSession?.is_simulated]
+    [activeSession?.is_simulated, allowInput]
   );
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (activeSession?.is_simulated) return;
+      if (activeSession?.is_simulated || !allowInput) return;
       deviceService.sendSessionInput({
         MouseUp: { button: e.button },
       });
     },
-    [activeSession?.is_simulated]
+    [activeSession?.is_simulated, allowInput]
   );
 
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLCanvasElement>) => {
-      if (activeSession?.is_simulated) return;
+      if (activeSession?.is_simulated || !allowInput) return;
       e.preventDefault();
       const deltaY = Math.sign(e.deltaY) * 120;
       deviceService.sendSessionInput({
         MouseWheel: { delta_y: deltaY },
       });
     },
-    [activeSession?.is_simulated]
+    [activeSession?.is_simulated, allowInput]
   );
 
   // Handle Keyboard Events
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (activeSession?.is_simulated) return;
-      // Prevent browser default actions like Ctrl+W or F5 while interacting with remote session
+      if (activeSession?.is_simulated || !allowInput) return;
       if (e.key === 'Tab' || e.key === 'Alt') {
         e.preventDefault();
       }
@@ -164,18 +185,37 @@ export const SessionView: React.FC<SessionViewProps> = ({
         KeyDown: { key_code: e.keyCode },
       });
     },
-    [activeSession?.is_simulated]
+    [activeSession?.is_simulated, allowInput]
   );
 
   const handleKeyUp = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (activeSession?.is_simulated) return;
+      if (activeSession?.is_simulated || !allowInput) return;
       deviceService.sendSessionInput({
         KeyUp: { key_code: e.keyCode },
       });
     },
-    [activeSession?.is_simulated]
+    [activeSession?.is_simulated, allowInput]
   );
+
+  const handleToggleInputPermission = async () => {
+    const nextVal = !allowInput;
+    setAllowInput(nextVal);
+    await deviceService.setSessionPermission(nextVal);
+  };
+
+  const handleSyncClipboardManual = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        await deviceService.syncClipboard(text);
+        setClipboardToast('Local clipboard synced to host');
+        setTimeout(() => setClipboardToast(null), 2500);
+      }
+    } catch {
+      // User may have denied clipboard permission in webview
+    }
+  };
 
   if (!activeSession) return null;
 
@@ -235,16 +275,44 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
         {/* Quick Toolbar */}
         <div className="flex items-center space-x-2">
-          {activeSession.is_simulated ? (
-            <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/50 text-[10px] text-amber-300 font-semibold">
-              Simulation Sandbox
-            </span>
-          ) : (
-            <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800/50 text-[10px] text-emerald-300 font-semibold">
-              <ShieldCheck className="w-3 h-3 mr-1 text-emerald-400" />
-              Live Direct Stream (M2/M3)
+          {clipboardToast && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-950 border border-blue-700 text-[10px] text-blue-300 font-semibold animate-in fade-in duration-150">
+              <ClipboardCheck className="w-3 h-3 mr-1 text-blue-400" />
+              {clipboardToast}
             </span>
           )}
+
+          {/* View-Only vs Full Control Mode Toggle */}
+          <button
+            onClick={handleToggleInputPermission}
+            className={`flex items-center space-x-1 px-2 py-1 rounded text-xs font-medium border transition ${
+              allowInput
+                ? 'bg-emerald-950/80 border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/60'
+                : 'bg-amber-950/80 border-amber-700/60 text-amber-300 hover:bg-amber-900/60'
+            }`}
+            title={allowInput ? 'Full Control Mode active. Click to switch to View-Only.' : 'View-Only Mode active. Click to allow control.'}
+          >
+            {allowInput ? (
+              <>
+                <MousePointerClick className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Control Active</span>
+              </>
+            ) : (
+              <>
+                <Eye className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">View-Only</span>
+              </>
+            )}
+          </button>
+
+          {/* Sync Clipboard Button */}
+          <button
+            onClick={handleSyncClipboardManual}
+            className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+            title="Sync clipboard with remote computer"
+          >
+            <ClipboardCopy className="w-4 h-4" />
+          </button>
 
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
@@ -368,7 +436,12 @@ export const SessionView: React.FC<SessionViewProps> = ({
             Host Consent Active
           </span>
           <span className="flex items-center gap-1 text-slate-400">
-            {isInputFocused ? (
+            {!allowInput ? (
+              <span className="text-amber-400 flex items-center gap-1">
+                <Eye className="w-3 h-3" />
+                View-Only Mode
+              </span>
+            ) : isInputFocused ? (
               <span className="flex items-center gap-1 text-blue-400">
                 <MousePointer className="w-3 h-3" />
                 <Keyboard className="w-3 h-3" />

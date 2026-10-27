@@ -7,6 +7,7 @@ members = [
     "crates/meshdesk-protocol",
     "crates/meshdesk-discovery",
     "crates/meshdesk-stream",
+    "crates/meshdesk-signaling",
     "crates/meshdesk-app",
     "src-tauri",
 ]

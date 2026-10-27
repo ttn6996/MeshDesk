@@ -8,8 +8,9 @@ import {
   Key,
   RotateCcw,
   CheckCircle2,
+  Radio,
 } from 'lucide-react';
-import { AppSettings, LocalIdentity } from '../../types';
+import { AppSettings, LocalIdentity, SignalingStatusInfo } from '../../types';
 import { deviceService } from '../../services/deviceService';
 
 interface SettingsViewProps {
@@ -20,12 +21,28 @@ interface SettingsViewProps {
 export const SettingsView: React.FC<SettingsViewProps> = ({ onBack, localIdentity }) => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
+  const [signalingStatus, setSignalingStatus] = useState<SignalingStatusInfo | null>(null);
+  const [isTestingSignaling, setIsTestingSignaling] = useState(false);
 
   useEffect(() => {
     deviceService.getSettings().then(setSettings);
+    deviceService.getSignalingStatus().then(setSignalingStatus);
   }, []);
 
   if (!settings) return null;
+
+  const handleTestSignaling = async () => {
+    setIsTestingSignaling(true);
+    try {
+      if (settings.signaling_url) {
+        await deviceService.connectSignaling(settings.signaling_url);
+        const st = await deviceService.getSignalingStatus();
+        setSignalingStatus(st);
+      }
+    } finally {
+      setIsTestingSignaling(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,15 +246,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onBack, localIdentit
               </div>
 
               <div className="md:col-span-2">
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Signaling WebSocket Endpoint
-                </label>
-                <input
-                  type="text"
-                  value={settings.signaling_url}
-                  onChange={(e) => setSettings({ ...settings, signaling_url: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-300">
+                    Signaling WebSocket Broker (Milestone 4)
+                  </label>
+                  {signalingStatus && (
+                    <span className="flex items-center text-[10px] text-slate-400 font-mono">
+                      <Radio className="w-3 h-3 text-emerald-400 mr-1 animate-pulse" />
+                      Broker Status: {signalingStatus.is_server_running ? 'Listening' : 'Ready'}
+                    </span>
+                  )}
+                </div>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={settings.signaling_url}
+                    onChange={(e) => setSettings({ ...settings, signaling_url: e.target.value })}
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTestSignaling}
+                    disabled={isTestingSignaling}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition"
+                  >
+                    {isTestingSignaling ? 'Testing...' : 'Test Connection'}
+                  </button>
+                </div>
               </div>
 
               <div className="md:col-span-2">

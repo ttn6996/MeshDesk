@@ -74,10 +74,79 @@ pub enum Message {
         seq: u64,
         input: InputKind,
     },
+    ClipboardSync {
+        session_id: String,
+        text: String,
+        timestamp_ms: u64,
+    },
+    ControlPermissionUpdate {
+        session_id: String,
+        allow_input: bool,
+    },
+    HostPromptDecision {
+        session_id: String,
+        accepted: bool,
+        reason: Option<String>,
+    },
     Disconnect {
         session_id: String,
         reason: String,
     },
+}
+
+/// WebRTC & WebSocket signaling messages for Internet NAT traversal (Milestone 4)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SignalingMessage {
+    Register {
+        device_id: String,
+        hostname: String,
+        public_key_b64: String,
+        auth_token: Option<String>,
+    },
+    Registered {
+        device_id: String,
+        registered_at_epoch_ms: u64,
+    },
+    DeviceOnline {
+        device_id: String,
+        hostname: String,
+    },
+    DeviceOffline {
+        device_id: String,
+    },
+    Offer {
+        sender_id: String,
+        target_id: String,
+        session_id: String,
+        sdp: String,
+    },
+    Answer {
+        sender_id: String,
+        target_id: String,
+        session_id: String,
+        sdp: String,
+    },
+    IceCandidate {
+        sender_id: String,
+        target_id: String,
+        session_id: String,
+        candidate: String,
+        sdp_mid: Option<String>,
+        sdp_mline_index: Option<u16>,
+    },
+    RelayData {
+        sender_id: String,
+        target_id: String,
+        session_id: String,
+        payload_b64: String,
+    },
+    Error {
+        code: String,
+        message: String,
+    },
+    Ping,
+    Pong,
 }
 
 pub struct FrameCodec;
@@ -203,5 +272,27 @@ mod tests {
         let mut bad = vec![0x00, 0x00, 0x00, 0x00, 1, 0, 0, 0, 0, 2];
         bad.extend_from_slice(b"{}");
         assert!(FrameCodec::decode(&bad).is_err());
+    }
+
+    #[test]
+    fn test_clipboard_and_signaling_messages() {
+        let clip = Message::ClipboardSync {
+            session_id: "sess-clip-1".into(),
+            text: "Hello from remote clipboard!".into(),
+            timestamp_ms: 1729680050,
+        };
+        let enc = FrameCodec::encode(&clip).unwrap();
+        let dec = FrameCodec::decode(&enc).unwrap();
+        assert_eq!(clip, dec);
+
+        let sig = SignalingMessage::Offer {
+            sender_id: "MD-1111-2222".into(),
+            target_id: "MD-3333-4444".into(),
+            session_id: "sig-sess-1".into(),
+            sdp: "v=0\r\no=- 12345 2 IN IP4 127.0.0.1".into(),
+        };
+        let sig_json = serde_json::to_string(&sig).unwrap();
+        let sig_dec: SignalingMessage = serde_json::from_str(&sig_json).unwrap();
+        assert_eq!(sig, sig_dec);
     }
 }

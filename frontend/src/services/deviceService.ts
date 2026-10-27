@@ -7,6 +7,7 @@ import {
   InputKind,
   LocalIdentity,
   SessionInfo,
+  SignalingStatusInfo,
 } from '../types';
 
 const STORAGE_KEY_DEVICES = 'meshdesk_persistent_devices_v1';
@@ -103,6 +104,12 @@ export interface IDeviceService {
   ): Promise<SessionInfo>;
   sendSessionInput(input: InputKind): Promise<void>;
   disconnectSession(sessionId?: string): Promise<void>;
+  syncClipboard(text: string): Promise<void>;
+  setSessionPermission(allowInput: boolean): Promise<void>;
+  setActiveSessionTab(sessionId: string): Promise<void>;
+  killAllSessions(): Promise<void>;
+  getSignalingStatus(): Promise<SignalingStatusInfo>;
+  connectSignaling(url: string): Promise<void>;
 }
 
 function checkIsTauri(): boolean {
@@ -410,6 +417,72 @@ class HybridDeviceService implements IDeviceService {
         await invoke('cmd_disconnect_session');
       } catch (err) {
         console.warn('Tauri IPC disconnect_session failed:', err);
+      }
+    }
+  }
+
+  async syncClipboard(text: string): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_sync_clipboard', { text });
+      } catch (err) {
+        console.warn('Tauri IPC sync_clipboard failed:', err);
+      }
+    }
+  }
+
+  async setSessionPermission(allowInput: boolean): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_set_session_permission', { allowInput });
+      } catch (err) {
+        console.warn('Tauri IPC set_session_permission failed:', err);
+      }
+    }
+  }
+
+  async setActiveSessionTab(sessionId: string): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_set_active_session_tab', { sessionId });
+      } catch (err) {
+        console.warn('Tauri IPC set_active_session_tab failed:', err);
+      }
+    }
+  }
+
+  async killAllSessions(): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_kill_all_sessions');
+      } catch (err) {
+        console.warn('Tauri IPC kill_all_sessions failed:', err);
+      }
+    }
+  }
+
+  async getSignalingStatus(): Promise<SignalingStatusInfo> {
+    if (this.isTauriEnvironment()) {
+      try {
+        return await invoke<SignalingStatusInfo>('cmd_get_signaling_status');
+      } catch (err) {
+        console.warn('Tauri IPC get_signaling_status failed:', err);
+      }
+    }
+    return {
+      is_server_running: true,
+      is_client_connected: false,
+      server_addr: 'ws://127.0.0.1:48122',
+      online_peers_count: 0,
+    };
+  }
+
+  async connectSignaling(url: string): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_connect_signaling', { url });
+      } catch (err) {
+        console.warn('Tauri IPC connect_signaling failed:', err);
       }
     }
   }

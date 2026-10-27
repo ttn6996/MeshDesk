@@ -42,13 +42,11 @@ The codebase is organized as a Cargo workspace with verified boundaries:
 | **`meshdesk-storage`** | `crates/meshdesk-storage` | Embedded SQLite engine managing persistent device metadata, app settings, and linear schema version migrations. |
 | **`meshdesk-protocol`** | `crates/meshdesk-protocol` | Versioned wire protocol, length-prefixed binary framing (magic `MDSK`, 10MB frame bound), handshake frames, video frames, input events, and message codec. |
 | **`meshdesk-discovery`** | `crates/meshdesk-discovery` | UDP broadcast announcer and listener on port 48121, live node caching, latency tracking, and stale node pruning. |
-| **`meshdesk-stream`** | `crates/meshdesk-stream` | Win32 GDI `BitBlt` desktop capture engine, JPEG encoding, test pattern fallback, and Win32 `SendInput` input injection guarded by host consent. |
-| **`meshdesk-app`** | `crates/meshdesk-app` | Desktop application engine, TCP host server (port 48120), client session manager, `AppState`, persistent paths (`%APPDATA%/MeshDesk`), and Tauri 2 IPC commands. |
+| **`meshdesk-stream`** | `crates/meshdesk-stream` | Win32 GDI `BitBlt` desktop capture engine, JPEG encoding, test pattern fallback, Win32 `SendInput` input injection, and Win32 clipboard synchronization. |
+| **`meshdesk-signaling`** | `crates/meshdesk-signaling` | WebSocket signaling server and client (port 48122) for WebRTC SDP offer/answer exchange, ICE candidates, and relay routing. |
+| **`meshdesk-app`** | `crates/meshdesk-app` | Desktop application engine, TCP host server (port 48120), multi-session manager, clipboard sync, `AppState`, persistent paths (`%APPDATA%/MeshDesk`), and Tauri 2 IPC commands. |
 | **`meshdesk-desktop`** | `src-tauri` | Desktop application shell for Tauri 2 CLI, windowing configuration, capabilities, and desktop runner. |
-| **`frontend`** | `frontend/` | React 19 + TypeScript + Vite workspace UI, interactive remote desktop canvas, session tabs, responsive device grid, and settings panel. |
-
-### Planned Modular Components (Subsequent Milestones)
-- **`meshdesk-signaling`** (*Milestone 4*): Standalone WebSocket signaling server for WebRTC SDP exchange and NAT traversal.
+| **`frontend`** | `frontend/` | React 19 + TypeScript + Vite workspace UI, interactive remote desktop canvas, multi-session tabs, responsive device grid, and settings panel. |
 
 ---
 

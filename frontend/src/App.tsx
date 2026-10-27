@@ -130,9 +130,14 @@ export const App: React.FC = () => {
 
   // Terminate all sessions
   const handleDisconnectAll = async () => {
-    await deviceService.disconnectSession();
+    await deviceService.killAllSessions();
     setActiveSessions([]);
     setActiveSessionId('');
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    await deviceService.setActiveSessionTab(sessionId);
   };
 
   // Save device (add or edit)
@@ -202,7 +207,7 @@ export const App: React.FC = () => {
             <SessionView
               sessions={activeSessions}
               activeSessionId={activeSessionId}
-              onSelectSession={setActiveSessionId}
+              onSelectSession={handleSelectSession}
               onCloseSession={handleCloseSession}
             />
           ) : (

@@ -20,7 +20,8 @@ MeshDesk/
 │   ├── meshdesk-storage/       # Embedded SQLite (WAL mode, schema migrations 1 & 2)
 │   ├── meshdesk-protocol/      # Binary length-prefixed wire protocol (10MB frame bound, magic MDSK, video/input frames)
 │   ├── meshdesk-discovery/     # UDP broadcast announcer & listener (port 48121, node caching, ping/latency)
-│   ├── meshdesk-stream/        # Win32 GDI BitBlt desktop capture, JPEG encoding, Win32 SendInput injection
+│   ├── meshdesk-stream/        # Win32 GDI BitBlt desktop capture, JPEG encoding, Win32 SendInput injection, clipboard sync
+│   ├── meshdesk-signaling/     # WebSocket signaling broker (port 48122), presence registry, WebRTC SDP relay
 │   └── meshdesk-app/           # Tauri 2 desktop application engine, TCP host (port 48120), IPC commands
 ├── frontend/                   # React 19 + TypeScript + Vite + Tailwind CSS desktop UI
 │   ├── src/
@@ -141,9 +142,31 @@ npm run tauri dev
   - Full mouse and keyboard input forwarding to host with throttled rate-limiting.
   - Live HUD displaying FPS, resolution, frame counts, and host consent badge.
 
-### Upcoming Milestones
-- [ ] **Milestone 4: Internet Connectivity & NAT Traversal** (Signaling server, STUN/TURN WebRTC relay).
-- [ ] **Milestone 5: Multi-PC Workspace Production Experience** (Concurrent live streams, input sandboxing).
+### Milestone 4: Internet Connectivity & NAT Traversal (Verified & Complete)
+- [x] **WebSocket Signaling Broker** (`crates/meshdesk-signaling`):
+  - Async WebSocket broker running on port 48122 (`SignalingServer`).
+  - Standalone binary executable `meshdesk-signaling-server` for VPS/cloud deployment.
+  - Device presence registration (`SignalingMessage::Register`, `DeviceOnline`, `DeviceOffline`).
+  - Peer-to-peer WebRTC SDP Offer/Answer routing and ICE Candidate exchange.
+  - Zero-knowledge credentials: password hashes are never exposed to signaling brokers.
+- [x] **Signaling Client Integration** (`crates/meshdesk-app`):
+  - Embedded client registering with remote signaling URL from application settings.
+  - Live status indicator and connection tester in Settings panel.
+
+### Milestone 5: Multi-PC Workspace Production Experience (Verified & Complete)
+- [x] **Multi-Session Tab Container**:
+  - Seamless navigation between multiple connected computer workspaces.
+  - Input routing isolation strictly scoped to active tab.
+- [x] **Dynamic Background Frame Throttling**:
+  - Foreground active session streams at full frame rate (~24-30 FPS).
+  - Background/inactive session tabs dynamically notify host to throttle capture rate and conserve CPU/network.
+- [x] **Emergency Disconnect ("Kill All Remote Sessions")**:
+  - Global emergency disconnect button in header and command bridge (`cmd_kill_all_sessions`).
+- [x] **Bidirectional Clipboard Synchronization**:
+  - Win32 API clipboard reader and writer (`ClipboardManager` using `CF_UNICODETEXT`).
+  - Synchronizes clipboard text between host and client sessions over encrypted protocol channel.
+- [x] **Granular Control Permissions**:
+  - Runtime switching between Full Control and View-Only mode on active session HUD.
 
 ---
 

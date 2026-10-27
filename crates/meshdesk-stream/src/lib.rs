@@ -341,6 +341,113 @@ impl InputInjector {
     }
 }
 
+/// Bidirectional clipboard manager for synchronized cross-workstation clipboard (Milestone 5)
+pub struct ClipboardManager;
+
+#[cfg(windows)]
+impl ClipboardManager {
+    pub fn get_text() -> Result<Option<String>> {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, GetClipboardData, OpenClipboard,
+        };
+        use windows_sys::Win32::System::Memory::{GlobalLock, GlobalUnlock};
+
+        const CF_UNICODETEXT: u32 = 13;
+
+        unsafe {
+            if OpenClipboard(std::ptr::null_mut()) == 0 {
+                return Ok(None);
+            }
+
+            let handle = GetClipboardData(CF_UNICODETEXT);
+            if handle.is_null() {
+                CloseClipboard();
+                return Ok(None);
+            }
+
+            let ptr = GlobalLock(handle) as *const u16;
+            if ptr.is_null() {
+                CloseClipboard();
+                return Ok(None);
+            }
+
+            let mut len = 0;
+            while *ptr.add(len) != 0 {
+                len += 1;
+            }
+
+            let slice = std::slice::from_raw_parts(ptr, len);
+            let text = String::from_utf16_lossy(slice);
+
+            GlobalUnlock(handle);
+            CloseClipboard();
+
+            Ok(Some(text))
+        }
+    }
+
+    pub fn set_text(text: &str) -> Result<()> {
+        use windows_sys::Win32::System::DataExchange::{
+            CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+        };
+        use windows_sys::Win32::System::Memory::{
+            GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
+        };
+
+        const CF_UNICODETEXT: u32 = 13;
+
+        let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+        let bytes_len = wide.len() * std::mem::size_of::<u16>();
+
+        unsafe {
+            if OpenClipboard(std::ptr::null_mut()) == 0 {
+                return Err(MeshDeskError::SessionError("Cannot open clipboard".into()));
+            }
+
+            EmptyClipboard();
+
+            let h_mem = GlobalAlloc(GMEM_MOVEABLE, bytes_len);
+            if h_mem.is_null() {
+                CloseClipboard();
+                return Err(MeshDeskError::SessionError(
+                    "Cannot allocate memory for clipboard".into(),
+                ));
+            }
+
+            let ptr = GlobalLock(h_mem) as *mut u16;
+            if ptr.is_null() {
+                CloseClipboard();
+                return Err(MeshDeskError::SessionError(
+                    "Cannot lock clipboard memory".into(),
+                ));
+            }
+
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+            GlobalUnlock(h_mem);
+
+            if SetClipboardData(CF_UNICODETEXT, h_mem).is_null() {
+                CloseClipboard();
+                return Err(MeshDeskError::SessionError(
+                    "Cannot set clipboard data".into(),
+                ));
+            }
+
+            CloseClipboard();
+            Ok(())
+        }
+    }
+}
+
+#[cfg(not(windows))]
+impl ClipboardManager {
+    pub fn get_text() -> Result<Option<String>> {
+        Ok(None)
+    }
+    pub fn set_text(_text: &str) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,5 +488,15 @@ mod tests {
             1080,
         );
         assert!(res2.is_ok());
+    }
+
+    #[test]
+    fn test_clipboard_set_get_roundtrip() {
+        let test_phrase = "MeshDesk Clipboard Sync Test 12345";
+        let set_res = ClipboardManager::set_text(test_phrase);
+        if set_res.is_ok() {
+            let got = ClipboardManager::get_text().unwrap();
+            assert_eq!(got, Some(test_phrase.to_string()));
+        }
     }
 }

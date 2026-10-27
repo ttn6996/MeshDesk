@@ -76,7 +76,9 @@ pub struct ClientSession {
     pub target_device_id: String,
     pub target_device_name: String,
     pub is_connected: Arc<AtomicBool>,
-    input_tx: mpsc::Sender<InputKind>,
+    pub is_view_only: Arc<AtomicBool>,
+    pub is_active_tab: Arc<AtomicBool>,
+    msg_tx: mpsc::Sender<Message>,
     disconnect_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
@@ -87,10 +89,47 @@ impl ClientSession {
                 "Session is disconnected".into(),
             ));
         }
-        self.input_tx
-            .send(input)
+        if self.is_view_only.load(Ordering::Relaxed) {
+            // View-only mode active: silently ignore input injection
+            return Ok(());
+        }
+        self.msg_tx
+            .send(Message::InputEvent {
+                session_id: self.session_id.clone(),
+                seq: 0,
+                input,
+            })
             .await
             .map_err(|e| MeshDeskError::SessionError(format!("Failed to send input: {e}")))
+    }
+
+    pub async fn sync_clipboard(&self, text: &str) -> Result<()> {
+        if !self.is_connected.load(Ordering::Relaxed) {
+            return Err(MeshDeskError::SessionError(
+                "Session is disconnected".into(),
+            ));
+        }
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        self.msg_tx
+            .send(Message::ClipboardSync {
+                session_id: self.session_id.clone(),
+                text: text.to_string(),
+                timestamp_ms: now_ms,
+            })
+            .await
+            .map_err(|e| MeshDeskError::SessionError(format!("Failed to sync clipboard: {e}")))
+    }
+
+    pub fn set_view_only(&self, view_only: bool) {
+        self.is_view_only.store(view_only, Ordering::SeqCst);
+    }
+
+    pub fn set_active_tab(&self, active: bool) {
+        self.is_active_tab.store(active, Ordering::SeqCst);
     }
 
     pub fn disconnect(&mut self) {
@@ -179,25 +218,20 @@ pub async fn connect_to_remote_host(
     };
 
     let is_connected = Arc::new(AtomicBool::new(true));
-    let (input_tx, mut input_rx) = mpsc::channel::<InputKind>(128);
+    let is_view_only = Arc::new(AtomicBool::new(false));
+    let is_active_tab = Arc::new(AtomicBool::new(true));
+    let (msg_tx, mut msg_rx) = mpsc::channel::<Message>(128);
     let (disconnect_tx, mut disconnect_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // Task A: Write outgoing InputEvents to host
+    // Task A: Write outgoing messages (Input, ClipboardSync) to host
     let is_connected_writer = Arc::clone(&is_connected);
     let sess_id_writer = session_id.clone();
     tokio::spawn(async move {
-        let mut seq = 0u64;
         while is_connected_writer.load(Ordering::Relaxed) {
             tokio::select! {
-                Some(input) = input_rx.recv() => {
-                    seq += 1;
-                    let msg = Message::InputEvent {
-                        session_id: sess_id_writer.clone(),
-                        seq,
-                        input,
-                    };
+                Some(msg) = msg_rx.recv() => {
                     if let Err(e) = write_frame(&mut writer, &msg).await {
-                        debug!("Error sending input event: {e}");
+                        debug!("Error sending message to host: {e}");
                         break;
                     }
                 }
@@ -213,7 +247,7 @@ pub async fn connect_to_remote_host(
         is_connected_writer.store(false, Ordering::SeqCst);
     });
 
-    // Task B: Read incoming VideoFrames from host and emit to Tauri webview
+    // Task B: Read incoming VideoFrames and ClipboardSync from host and emit to Tauri webview
     let is_connected_reader = Arc::clone(&is_connected);
     let sess_id_reader = session_id.clone();
     let app = app_handle.clone();
@@ -265,6 +299,14 @@ pub async fn connect_to_remote_host(
 
                     let _ = app.emit("session-frame", event);
                 }
+                Ok(Message::ClipboardSync { text, .. }) => {
+                    info!(
+                        "Client received clipboard update from host ({} chars)",
+                        text.len()
+                    );
+                    let _ = meshdesk_stream::ClipboardManager::set_text(&text);
+                    let _ = app.emit("session-clipboard", text);
+                }
                 Ok(Message::Disconnect { reason, .. }) => {
                     info!("Remote host terminated session: {reason}");
                     break;
@@ -285,7 +327,9 @@ pub async fn connect_to_remote_host(
         target_device_id: target_device_id.to_string(),
         target_device_name: target_name.to_string(),
         is_connected,
-        input_tx,
+        is_view_only,
+        is_active_tab,
+        msg_tx,
         disconnect_tx: Some(disconnect_tx),
     })
 }
@@ -532,6 +576,13 @@ async fn handle_incoming_controller(
                 if let Err(e) = injector.inject(&input, 1920, 1080) {
                     debug!("Input injection failed: {e}");
                 }
+            }
+            Ok(Message::ClipboardSync { text, .. }) => {
+                info!(
+                    "Host received clipboard synchronization ({} chars)",
+                    text.len()
+                );
+                let _ = meshdesk_stream::ClipboardManager::set_text(&text);
             }
             Ok(Message::Disconnect { reason, .. }) => {
                 info!("Client disconnected from host: {reason}");

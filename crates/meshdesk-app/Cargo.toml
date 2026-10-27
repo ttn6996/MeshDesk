@@ -19,6 +19,7 @@ meshdesk-storage = { path = "../meshdesk-storage" }
 meshdesk-protocol = { path = "../meshdesk-protocol" }
 meshdesk-discovery = { path = "../meshdesk-discovery" }
 meshdesk-stream = { path = "../meshdesk-stream" }
+meshdesk-signaling = { path = "../meshdesk-signaling" }
 tauri = { version = "2.2", features = [] }
 rand.workspace = true
 serde.workspace = true

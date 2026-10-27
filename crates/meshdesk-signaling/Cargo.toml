@@ -1,0 +1,18 @@
+[package]
+name = "meshdesk-signaling"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+meshdesk-core = { path = "../meshdesk-core" }
+meshdesk-protocol = { path = "../meshdesk-protocol" }
+tokio = { workspace = true, features = ["full"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+uuid = { workspace = true }

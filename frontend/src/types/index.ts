@@ -39,6 +39,7 @@ export interface SessionInfo {
   bytes_sent: number;
   is_simulated: boolean;
   error_message?: string;
+  allow_input?: boolean;
 }
 
 export interface LocalIdentity {
@@ -93,4 +94,12 @@ export type InputKind =
   | { MouseWheel: { delta_y: number } }
   | { KeyDown: { key_code: number } }
   | { KeyUp: { key_code: number } };
+
+export interface SignalingStatusInfo {
+  is_server_running: boolean;
+  is_client_connected: boolean;
+  server_addr: string;
+  online_peers_count: number;
+}
+
 
