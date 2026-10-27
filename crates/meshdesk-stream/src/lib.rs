@@ -46,7 +46,20 @@ impl ScreenCaptureEngine {
             GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
         };
 
+        extern "system" {
+            fn OpenInputDesktop(dwflags: u32, finherit: i32, dwdesiredaccess: u32) -> *mut core::ffi::c_void;
+            fn SetThreadDesktop(hdesktop: *mut core::ffi::c_void) -> i32;
+            fn CloseDesktop(hdesktop: *mut core::ffi::c_void) -> i32;
+        }
+
         unsafe {
+            // Attach calling thread to active input desktop so background/tokio worker threads can capture
+            let h_desk = OpenInputDesktop(0, 0, 0x01FF);
+            if !h_desk.is_null() {
+                SetThreadDesktop(h_desk);
+                CloseDesktop(h_desk);
+            }
+
             let width = GetSystemMetrics(SM_CXSCREEN) as u32;
             let height = GetSystemMetrics(SM_CYSCREEN) as u32;
 
@@ -56,6 +69,7 @@ impl ScreenCaptureEngine {
                 ));
             }
 
+            // Get screen DC for entire primary display
             let hdc_screen = GetDC(std::ptr::null_mut());
             if hdc_screen.is_null() {
                 return Err(MeshDeskError::SessionError(
@@ -81,7 +95,10 @@ impl ScreenCaptureEngine {
             }
 
             let old_obj = SelectObject(hdc_mem, h_bitmap);
-            let blt_res = BitBlt(
+
+            // BitBlt with CAPTUREBLT (0x40000000) captures layered & DWM composited windows
+            const CAPTUREBLT: u32 = 0x40000000;
+            let mut blt_res = BitBlt(
                 hdc_mem,
                 0,
                 0,
@@ -90,25 +107,43 @@ impl ScreenCaptureEngine {
                 hdc_screen,
                 0,
                 0,
-                SRCCOPY,
+                SRCCOPY | CAPTUREBLT,
             );
 
             if blt_res == 0 {
-                SelectObject(hdc_mem, old_obj);
+                // Fallback to SRCCOPY if CAPTUREBLT is unsupported or restricted
+                blt_res = BitBlt(
+                    hdc_mem,
+                    0,
+                    0,
+                    width as i32,
+                    height as i32,
+                    hdc_screen,
+                    0,
+                    0,
+                    SRCCOPY,
+                );
+            }
+
+            // CRITICAL Win32 requirement: deselect h_bitmap from memory DC before calling GetDIBits!
+            SelectObject(hdc_mem, old_obj);
+
+            if blt_res == 0 {
+                let err = windows_sys::Win32::Foundation::GetLastError();
                 DeleteObject(h_bitmap);
                 DeleteDC(hdc_mem);
                 ReleaseDC(std::ptr::null_mut(), hdc_screen);
                 return Err(MeshDeskError::SessionError(
-                    "BitBlt screen capture failed".into(),
+                    format!("BitBlt screen capture failed with Win32 error code: {err}"),
                 ));
             }
 
-            // Prepare BITMAPINFOHEADER with negative biHeight for top-down rows
+            // Standard bottom-up BITMAPINFOHEADER (positive biHeight) for maximum Windows driver compatibility
             let mut bmi = BITMAPINFO {
                 bmiHeader: BITMAPINFOHEADER {
                     biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
                     biWidth: width as i32,
-                    biHeight: -(height as i32), // Top-down
+                    biHeight: height as i32,
                     biPlanes: 1,
                     biBitCount: 32, // BGRA 32-bit
                     biCompression: BI_RGB,
@@ -130,7 +165,7 @@ impl ScreenCaptureEngine {
             let mut bgra_buf = vec![0u8; pixel_count * 4];
 
             let di_res = GetDIBits(
-                hdc_mem,
+                hdc_screen,
                 h_bitmap,
                 0,
                 height,
@@ -140,7 +175,6 @@ impl ScreenCaptureEngine {
             );
 
             // Cleanup Win32 GDI resources promptly
-            SelectObject(hdc_mem, old_obj);
             DeleteObject(h_bitmap);
             DeleteDC(hdc_mem);
             ReleaseDC(std::ptr::null_mut(), hdc_screen);
@@ -151,13 +185,18 @@ impl ScreenCaptureEngine {
                 ));
             }
 
-            // Convert BGRA to RGB for JPEG encoding
+            // Convert bottom-up BGRA rows into top-down RGB for JPEG encoding
+            let stride = (width * 4) as usize;
             let mut rgb_buf = Vec::with_capacity(pixel_count * 3);
-            #[allow(clippy::chunks_exact_to_as_chunks)]
-            for pixel in bgra_buf.chunks_exact(4) {
-                rgb_buf.push(pixel[2]); // R
-                rgb_buf.push(pixel[1]); // G
-                rgb_buf.push(pixel[0]); // B
+            for y in 0..height {
+                let row_idx = (height - 1 - y) as usize;
+                let row_start = row_idx * stride;
+                let row = &bgra_buf[row_start..row_start + stride];
+                for pixel in row.chunks_exact(4) {
+                    rgb_buf.push(pixel[2]); // R
+                    rgb_buf.push(pixel[1]); // G
+                    rgb_buf.push(pixel[0]); // B
+                }
             }
 
             // Encode to JPEG
@@ -451,6 +490,31 @@ impl ClipboardManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_capture_frame_real() {
+        // Spawn in a separate thread (mimicking tokio worker thread) to test desktop attachment
+        let handle = std::thread::spawn(|| {
+            let engine = ScreenCaptureEngine::new(75);
+            let res = engine.capture_frame();
+            println!("capture_frame result: {:?}", res.as_ref().map(|(w, h, b)| (*w, *h, b.len())));
+            assert!(res.is_ok());
+            let (w, h, bytes) = res.unwrap();
+            assert!(w > 0 && h > 0);
+            assert!(bytes.len() > 1000);
+            // Verify JPEG SOI (FF D8) and EOI (FF D9)
+            assert_eq!(bytes[0], 0xFF);
+            assert_eq!(bytes[1], 0xD8);
+            assert_eq!(bytes[bytes.len() - 2], 0xFF);
+            assert_eq!(bytes[bytes.len() - 1], 0xD9);
+
+            // A solid black 1536x864 JPEG is ~8-15KB because of identical zero-entropy DCT blocks.
+            // A real desktop with icons, wallpaper, UI elements produces > 30-100KB at Q75.
+            println!("Captured JPEG size: {} bytes", bytes.len());
+            assert!(bytes.len() > 20000, "JPEG should contain rich desktop visual data, not solid black");
+        });
+        handle.join().expect("Worker thread panicked");
+    }
 
     #[test]
     fn test_capture_fallback_pattern() {
