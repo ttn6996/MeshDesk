@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 
+pub mod scanner;
+pub use scanner::LanScanner;
+
 pub const DEFAULT_LAN_DISCOVERY_PORT: u16 = 48121;
 pub const DEFAULT_LAN_LISTEN_PORT: u16 = 48120;
 pub const DISCOVERY_PROTOCOL_HEADER: &str = "meshdesk-discovery";
@@ -129,6 +132,19 @@ impl DiscoveryService {
         guard.values().cloned().collect()
     }
 
+    /// Scan the local /24 subnet via ARP/probes to find all active Wi-Fi / LAN devices
+    pub async fn scan_lan_subnet(&self) -> Vec<DiscoveredNode> {
+        let scanned = LanScanner::scan_subnet(1500).await;
+        let mut guard = self.nodes.write().await;
+        for node in &scanned {
+            // Do not overwrite an existing MeshDesk node if it has live heartbeat
+            if !guard.contains_key(&node.device_id) {
+                guard.insert(node.device_id.clone(), node.clone());
+            }
+        }
+        scanned
+    }
+
     /// Prune nodes that haven't sent an announcement in NODE_TIMEOUT_SECS
     pub async fn prune_stale_nodes(&self) {
         let now_secs = SystemTime::now()
@@ -138,7 +154,12 @@ impl DiscoveryService {
 
         let mut guard = self.nodes.write().await;
         guard.retain(|_, node| {
-            now_secs.saturating_sub(node.last_seen_epoch_secs) < NODE_TIMEOUT_SECS
+            let timeout = if node.device_id.starts_with("LAN-") {
+                60
+            } else {
+                NODE_TIMEOUT_SECS
+            };
+            now_secs.saturating_sub(node.last_seen_epoch_secs) < timeout
         });
     }
 

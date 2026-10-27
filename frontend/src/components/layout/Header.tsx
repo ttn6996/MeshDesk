@@ -10,6 +10,7 @@ import {
   Share2,
   Key,
   RefreshCw,
+  Radar,
 } from 'lucide-react';
 import { HostAccessCredentials, LocalIdentity } from '../../types';
 import { deviceService } from '../../services/deviceService';
@@ -21,6 +22,8 @@ interface HeaderProps {
   onOpenAddDeviceDialog: () => void;
   onOpenSettings: () => void;
   onDisconnectAllSessions: () => void;
+  onScanLan?: () => void;
+  isScanningLan?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -30,6 +33,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddDeviceDialog,
   onOpenSettings,
   onDisconnectAllSessions,
+  onScanLan,
+  isScanningLan,
 }) => {
   const [copiedId, setCopiedId] = useState(false);
   const [copiedPw, setCopiedPw] = useState(false);
@@ -155,6 +160,18 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <PowerOff className="w-3.5 h-3.5 text-rose-400" />
             <span>End All ({activeSessionsCount})</span>
+          </button>
+        )}
+
+        {onScanLan && (
+          <button
+            onClick={onScanLan}
+            disabled={isScanningLan}
+            className="flex items-center space-x-1.5 px-3 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/60 font-medium text-xs transition disabled:opacity-50"
+            title="Scan local Wi-Fi / LAN for active computers and devices"
+          >
+            <Radar className={`w-4 h-4 text-emerald-400 ${isScanningLan ? 'animate-spin' : ''}`} />
+            <span>{isScanningLan ? 'Scanning...' : 'Scan LAN'}</span>
           </button>
         )}
 

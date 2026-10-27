@@ -35,6 +35,7 @@ export interface IDeviceService {
   getSettings(): Promise<AppSettings>;
   saveSettings(settings: AppSettings): Promise<void>;
   getLanDevices(): Promise<DiscoveredNode[]>;
+  scanLanDevices(): Promise<DiscoveredNode[]>;
   getHostAccessCredentials(): Promise<HostAccessCredentials>;
   generateNewAccessPassword(): Promise<HostAccessCredentials>;
   connectLanSession(
@@ -219,6 +220,17 @@ class HybridDeviceService implements IDeviceService {
       }
     }
     return [];
+  }
+
+  async scanLanDevices(): Promise<DiscoveredNode[]> {
+    if (this.isTauriEnvironment()) {
+      try {
+        return await invoke<DiscoveredNode[]>('cmd_scan_lan_devices');
+      } catch (err) {
+        console.warn('Tauri IPC failed for scan_lan_devices:', err);
+      }
+    }
+    return this.getLanDevices();
   }
 
   async getHostAccessCredentials(): Promise<HostAccessCredentials> {

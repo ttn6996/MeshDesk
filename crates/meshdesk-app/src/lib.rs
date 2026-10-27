@@ -326,6 +326,20 @@ pub mod commands {
     }
 
     #[tauri::command]
+    pub async fn scan_lan_devices(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<Vec<DiscoveredNode>, String> {
+        Ok(state.discovery.scan_lan_subnet().await)
+    }
+
+    #[tauri::command]
+    pub async fn cmd_scan_lan_devices(
+        state: State<'_, AppState>,
+    ) -> std::result::Result<Vec<DiscoveredNode>, String> {
+        scan_lan_devices(state).await
+    }
+
+    #[tauri::command]
     pub async fn get_host_access_credentials(
         state: State<'_, AppState>,
     ) -> std::result::Result<HostAccessCredentials, String> {
@@ -620,7 +634,7 @@ pub fn run() {
         }
     };
 
-    // Auto-start background discovery and host server
+    // Auto-start background discovery, host server, and initial subnet probe
     let discovery = Arc::clone(&app_state.discovery);
     let allow_discovery = Arc::clone(&app_state.allow_lan_discovery);
     let host_server = Arc::clone(&app_state.host_server);
@@ -629,6 +643,12 @@ pub fn run() {
         if let Err(e) = discovery.start(allow_discovery).await {
             log::warn!("Could not start LAN discovery service: {e}");
         }
+    });
+
+    let discovery_for_scan = Arc::clone(&app_state.discovery);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+        let _ = discovery_for_scan.scan_lan_subnet().await;
     });
 
     tauri::async_runtime::spawn(async move {
@@ -654,6 +674,8 @@ pub fn run() {
             commands::cmd_save_app_settings,
             commands::get_lan_devices,
             commands::cmd_get_lan_devices,
+            commands::scan_lan_devices,
+            commands::cmd_scan_lan_devices,
             commands::get_host_access_credentials,
             commands::cmd_get_host_access_credentials,
             commands::generate_new_access_password,

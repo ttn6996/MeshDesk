@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   Plus,
+  Radar,
 } from 'lucide-react';
 import { Device } from '../../types';
 import { DeviceCard } from './DeviceCard';
@@ -21,6 +22,8 @@ interface WorkspaceViewProps {
   onDelete: (deviceId: string) => void;
   onToggleFavorite: (device: Device) => void;
   onOpenAddDevice: () => void;
+  onScanLan?: () => void;
+  isScanningLan?: boolean;
 }
 
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
@@ -33,6 +36,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
   onDelete,
   onToggleFavorite,
   onOpenAddDevice,
+  onScanLan,
+  isScanningLan,
 }) => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
@@ -172,17 +177,29 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
       {filtered.length === 0 ? (
         <div className="p-12 text-center border-2 border-dashed border-slate-800 rounded-2xl bg-slate-900/30">
           <Monitor className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-slate-300">No matching computers found</h3>
+          <h3 className="text-sm font-semibold text-slate-300">No computers found yet</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Try adjusting your search criteria or register a new device to your workspace.
+            Scan your local Wi-Fi / LAN to discover other active computers, or add a device ID directly.
           </p>
-          <button
-            onClick={onOpenAddDevice}
-            className="mt-4 inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add New Device</span>
-          </button>
+          <div className="mt-4 flex items-center justify-center space-x-3">
+            {onScanLan && (
+              <button
+                onClick={onScanLan}
+                disabled={isScanningLan}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md transition disabled:opacity-50"
+              >
+                <Radar className={`w-4 h-4 ${isScanningLan ? 'animate-spin' : ''}`} />
+                <span>{isScanningLan ? 'Scanning Wi-Fi...' : 'Scan Local Wi-Fi'}</span>
+              </button>
+            )}
+            <button
+              onClick={onOpenAddDevice}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold shadow-md transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Device</span>
+            </button>
+          </div>
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

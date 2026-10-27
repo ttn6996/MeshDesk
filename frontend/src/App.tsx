@@ -6,7 +6,13 @@ import { SessionView } from './components/workspace/SessionView';
 import { ConnectDialog } from './components/dialogs/ConnectDialog';
 import { DeviceEditDialog } from './components/dialogs/DeviceEditDialog';
 import { SettingsView } from './components/settings/SettingsView';
-import { Device, LocalIdentity, SessionInfo, ConnectionMode } from './types';
+import {
+  Device,
+  LocalIdentity,
+  SessionInfo,
+  ConnectionMode,
+  DiscoveredNode,
+} from './types';
 import { deviceService } from './services/deviceService';
 
 export const App: React.FC = () => {
@@ -23,69 +29,93 @@ export const App: React.FC = () => {
   const [connectTargetDevice, setConnectTargetDevice] = useState<Device | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
+  const [isScanningLan, setIsScanningLan] = useState(false);
+
+  const syncLanNodes = (lanNodes: DiscoveredNode[]) => {
+    if (!lanNodes || lanNodes.length === 0) return;
+    setDevices((prevDevices) => {
+      const updated = [...prevDevices];
+      for (const node of lanNodes) {
+        const name =
+          node.device_name || node.hostname || `Host-${node.device_id.slice(3, 7)}`;
+        const ip = node.ip_address || node.ip || '127.0.0.1';
+        const port = node.listen_port || node.port || 48120;
+        const nodeAddr = `${ip}:${port}`;
+
+        let lastSeenIso = new Date().toISOString();
+        if (node.last_seen) {
+          lastSeenIso = node.last_seen;
+        } else if (typeof node.last_seen_epoch_secs === 'number') {
+          lastSeenIso = new Date(node.last_seen_epoch_secs * 1000).toISOString();
+        } else if (typeof node.last_seen_epoch_ms === 'number') {
+          lastSeenIso = new Date(node.last_seen_epoch_ms).toISOString();
+        }
+
+        const idx = updated.findIndex((d) => d.id === node.device_id);
+        if (idx >= 0) {
+          updated[idx] = {
+            ...updated[idx],
+            name,
+            status: 'online',
+            hostname: nodeAddr,
+            latency_ms: node.latency_ms ?? 1,
+            last_seen: lastSeenIso,
+          };
+        } else {
+          updated.push({
+            id: node.device_id,
+            name,
+            hostname: nodeAddr,
+            status: 'online',
+            os_info: node.os_info || 'Wi-Fi / LAN Device',
+            last_seen: lastSeenIso,
+            tags: ['lan-device'],
+            notes: `Discovered on local network (${nodeAddr})`,
+            latency_ms: node.latency_ms ?? 1,
+            is_favorite: false,
+          });
+        }
+      }
+      return updated;
+    });
+  };
+
+  const handleScanLan = async () => {
+    setIsScanningLan(true);
+    try {
+      const nodes = await deviceService.scanLanDevices();
+      syncLanNodes(nodes);
+    } catch (err) {
+      console.warn('LAN subnet scan failed:', err);
+    } finally {
+      setIsScanningLan(false);
+    }
+  };
 
   // Initialize data on mount & start real LAN discovery sync
   useEffect(() => {
     deviceService.getDevices().then(setDevices);
     deviceService.getLocalIdentity().then(setLocalIdentity);
 
+    // Initial background scan after 1.5s
+    const scanTimer = setTimeout(() => {
+      handleScanLan();
+    }, 1500);
+
     // Sync live LAN discovery nodes every 3 seconds
     const interval = setInterval(async () => {
       try {
         const lanNodes = await deviceService.getLanDevices();
-        if (lanNodes && lanNodes.length > 0) {
-          setDevices((prevDevices) => {
-            const updated = [...prevDevices];
-            for (const node of lanNodes) {
-              const name =
-                node.device_name || node.hostname || `Host-${node.device_id.slice(3, 7)}`;
-              const ip = node.ip_address || node.ip || '127.0.0.1';
-              const port = node.listen_port || node.port || 48120;
-              const nodeAddr = `${ip}:${port}`;
-
-              let lastSeenIso = new Date().toISOString();
-              if (node.last_seen) {
-                lastSeenIso = node.last_seen;
-              } else if (typeof node.last_seen_epoch_secs === 'number') {
-                lastSeenIso = new Date(node.last_seen_epoch_secs * 1000).toISOString();
-              } else if (typeof node.last_seen_epoch_ms === 'number') {
-                lastSeenIso = new Date(node.last_seen_epoch_ms).toISOString();
-              }
-
-              const idx = updated.findIndex((d) => d.id === node.device_id);
-              if (idx >= 0) {
-                updated[idx] = {
-                  ...updated[idx],
-                  name,
-                  status: 'online',
-                  hostname: nodeAddr,
-                  latency_ms: node.latency_ms ?? 1,
-                  last_seen: lastSeenIso,
-                };
-              } else {
-                updated.push({
-                  id: node.device_id,
-                  name,
-                  hostname: nodeAddr,
-                  status: 'online',
-                  os_info: node.os_info || 'Windows PC',
-                  last_seen: lastSeenIso,
-                  tags: ['lan-live'],
-                  notes: `Auto-discovered on LAN (${nodeAddr})`,
-                  latency_ms: node.latency_ms ?? 1,
-                  is_favorite: false,
-                });
-              }
-            }
-            return updated;
-          });
-        }
+        syncLanNodes(lanNodes);
       } catch (err) {
         console.warn('LAN discovery poll error:', err);
       }
     }, 3000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(scanTimer);
+      clearInterval(interval);
+    };
   }, []);
 
   // Handle device connect (from card or dialog)
@@ -194,6 +224,8 @@ export const App: React.FC = () => {
         }}
         onOpenSettings={() => setCurrentView(currentView === 'settings' ? 'workspace' : 'settings')}
         onDisconnectAllSessions={handleDisconnectAll}
+        onScanLan={handleScanLan}
+        isScanningLan={isScanningLan}
       />
 
       {/* Main Layout Area */}
@@ -242,6 +274,8 @@ export const App: React.FC = () => {
                 setEditingDevice(null);
                 setIsEditOpen(true);
               }}
+              onScanLan={handleScanLan}
+              isScanningLan={isScanningLan}
             />
           )}
         </main>
