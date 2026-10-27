@@ -189,6 +189,22 @@ impl DiscoveryService {
                         if let Err(e) = socket.send_to(&bytes, &broadcast_target).await {
                             debug!("UDP broadcast packet delivery notice: {e}");
                         }
+
+                        // Also broadcast directly onto the active local subnet (e.g. 192.168.0.255)
+                        if let Ok(temp_s) = std::net::UdpSocket::bind("0.0.0.0:0") {
+                            if temp_s.connect("8.8.8.8:80").is_ok() {
+                                if let Ok(local_addr) = temp_s.local_addr() {
+                                    if let std::net::IpAddr::V4(ipv4) = local_addr.ip() {
+                                        let octets = ipv4.octets();
+                                        let subnet_bcast = format!(
+                                            "{}.{}.{}.255:{}",
+                                            octets[0], octets[1], octets[2], broadcast_port
+                                        );
+                                        let _ = socket.send_to(&bytes, &subnet_bcast).await;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 tokio::time::sleep(Duration::from_millis(2500)).await;

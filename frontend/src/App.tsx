@@ -33,28 +33,43 @@ export const App: React.FC = () => {
     const interval = setInterval(async () => {
       try {
         const lanNodes = await deviceService.getLanDevices();
-        if (lanNodes.length > 0) {
+        if (lanNodes && lanNodes.length > 0) {
           setDevices((prevDevices) => {
             const updated = [...prevDevices];
             for (const node of lanNodes) {
+              const name =
+                node.device_name || node.hostname || `Host-${node.device_id.slice(3, 7)}`;
+              const ip = node.ip_address || node.ip || '127.0.0.1';
+              const port = node.listen_port || node.port || 48120;
+              const nodeAddr = `${ip}:${port}`;
+
+              let lastSeenIso = new Date().toISOString();
+              if (node.last_seen) {
+                lastSeenIso = node.last_seen;
+              } else if (typeof node.last_seen_epoch_secs === 'number') {
+                lastSeenIso = new Date(node.last_seen_epoch_secs * 1000).toISOString();
+              } else if (typeof node.last_seen_epoch_ms === 'number') {
+                lastSeenIso = new Date(node.last_seen_epoch_ms).toISOString();
+              }
+
               const idx = updated.findIndex((d) => d.id === node.device_id);
-              const nodeAddr = `${node.ip}:${node.port}`;
               if (idx >= 0) {
                 updated[idx] = {
                   ...updated[idx],
+                  name,
                   status: 'online',
                   hostname: nodeAddr,
                   latency_ms: node.latency_ms ?? 1,
-                  last_seen: new Date(node.last_seen_epoch_ms).toISOString(),
+                  last_seen: lastSeenIso,
                 };
               } else {
                 updated.push({
                   id: node.device_id,
-                  name: node.hostname,
+                  name,
                   hostname: nodeAddr,
                   status: 'online',
-                  os_info: node.os_info,
-                  last_seen: new Date(node.last_seen_epoch_ms).toISOString(),
+                  os_info: node.os_info || 'Windows PC',
+                  last_seen: lastSeenIso,
                   tags: ['lan-live'],
                   notes: `Auto-discovered on LAN (${nodeAddr})`,
                   latency_ms: node.latency_ms ?? 1,

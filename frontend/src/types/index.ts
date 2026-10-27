@@ -63,11 +63,17 @@ export interface AppSettings {
 
 export interface DiscoveredNode {
   device_id: string;
-  hostname: string;
-  ip: string;
-  port: number;
+  hostname?: string;
+  device_name?: string;
+  ip?: string;
+  ip_address?: string;
+  port?: number;
+  listen_port?: number;
   os_info: string;
-  last_seen_epoch_ms: number;
+  status?: string;
+  last_seen?: string;
+  last_seen_epoch_ms?: number;
+  last_seen_epoch_secs?: number;
   latency_ms?: number;
 }
 
