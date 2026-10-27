@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Monitor,
   Plus,
@@ -8,8 +8,11 @@ import {
   Copy,
   Check,
   Share2,
+  Key,
+  RefreshCw,
 } from 'lucide-react';
-import { LocalIdentity } from '../../types';
+import { HostAccessCredentials, LocalIdentity } from '../../types';
+import { deviceService } from '../../services/deviceService';
 
 interface HeaderProps {
   localIdentity: LocalIdentity | null;
@@ -28,13 +31,37 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onDisconnectAllSessions,
 }) => {
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+  const [copiedPw, setCopiedPw] = useState(false);
+  const [credentials, setCredentials] = useState<HostAccessCredentials | null>(null);
+  const [isRefreshingPw, setIsRefreshingPw] = useState(false);
+
+  useEffect(() => {
+    deviceService.getHostAccessCredentials().then(setCredentials);
+  }, []);
 
   const copyDeviceId = () => {
     if (!localIdentity) return;
     navigator.clipboard.writeText(localIdentity.device_id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopiedId(true);
+    setTimeout(() => setCopiedId(false), 2000);
+  };
+
+  const copyPassword = () => {
+    if (!credentials) return;
+    navigator.clipboard.writeText(credentials.access_password);
+    setCopiedPw(true);
+    setTimeout(() => setCopiedPw(false), 2000);
+  };
+
+  const handleRegeneratePassword = async () => {
+    setIsRefreshingPw(true);
+    try {
+      const newCreds = await deviceService.generateNewAccessPassword();
+      setCredentials(newCreds);
+    } finally {
+      setIsRefreshingPw(false);
+    }
   };
 
   return (
@@ -56,21 +83,64 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Local Node Identity Badge */}
+        {/* Local Node Identity & Temporary Access Credentials */}
         {localIdentity && (
-          <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
-            <span className="text-slate-400 flex items-center gap-1">
-              <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              This PC:
-            </span>
-            <span className="font-mono font-semibold text-slate-200">{localIdentity.device_id}</span>
-            <button
-              onClick={copyDeviceId}
-              title="Copy your Device ID"
-              className="p-1 hover:text-white text-slate-400 hover:bg-slate-700 rounded transition"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
+          <div className="hidden lg:flex items-center space-x-3">
+            {/* Device ID Badge */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
+              <span className="text-slate-400 flex items-center gap-1">
+                <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                This PC:
+              </span>
+              <span className="font-mono font-semibold text-slate-200">
+                {localIdentity.device_id}
+              </span>
+              <button
+                onClick={copyDeviceId}
+                title="Copy your Device ID"
+                className="p-1 hover:text-white text-slate-400 hover:bg-slate-700 rounded transition"
+              >
+                {copiedId ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+
+            {/* Temporary Access Password */}
+            {credentials && (
+              <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
+                <span className="text-slate-400 flex items-center gap-1">
+                  <Key className="w-3.5 h-3.5 text-amber-400" />
+                  Access Key:
+                </span>
+                <span className="font-mono font-semibold text-amber-300">
+                  {credentials.access_password}
+                </span>
+                <button
+                  onClick={copyPassword}
+                  title="Copy Access Password"
+                  className="p-1 hover:text-white text-slate-400 hover:bg-slate-700 rounded transition"
+                >
+                  {copiedPw ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <button
+                  onClick={handleRegeneratePassword}
+                  disabled={isRefreshingPw}
+                  title="Generate new temporary access password"
+                  className="p-1 hover:text-white text-slate-400 hover:bg-slate-700 rounded transition"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${isRefreshingPw ? 'animate-spin text-blue-400' : ''}`}
+                  />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -98,16 +168,16 @@ export const Header: React.FC<HeaderProps> = ({
 
         <button
           onClick={onOpenAddDeviceDialog}
-          className="flex items-center space-x-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition"
+          className="flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-medium text-xs transition"
         >
-          <Plus className="w-4 h-4 text-blue-400" />
+          <Plus className="w-4 h-4 text-slate-400" />
           <span>Add Device</span>
         </button>
 
         <button
           onClick={onOpenSettings}
-          className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
-          title="Settings & Network Security"
+          className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700/60 transition"
+          title="App Settings"
         >
           <Settings className="w-4 h-4" />
         </button>

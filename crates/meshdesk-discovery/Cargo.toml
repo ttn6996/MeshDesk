@@ -1,0 +1,17 @@
+[package]
+name = "meshdesk-discovery"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+meshdesk-core = { path = "../meshdesk-core" }
+tokio = { workspace = true, features = ["net", "sync", "time", "macros", "rt"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }

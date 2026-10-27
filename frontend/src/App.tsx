@@ -24,10 +24,53 @@ export const App: React.FC = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
 
-  // Initialize data on mount
+  // Initialize data on mount & start real LAN discovery sync
   useEffect(() => {
     deviceService.getDevices().then(setDevices);
     deviceService.getLocalIdentity().then(setLocalIdentity);
+
+    // Sync live LAN discovery nodes every 3 seconds
+    const interval = setInterval(async () => {
+      try {
+        const lanNodes = await deviceService.getLanDevices();
+        if (lanNodes.length > 0) {
+          setDevices((prevDevices) => {
+            const updated = [...prevDevices];
+            for (const node of lanNodes) {
+              const idx = updated.findIndex((d) => d.id === node.device_id);
+              const nodeAddr = `${node.ip}:${node.port}`;
+              if (idx >= 0) {
+                updated[idx] = {
+                  ...updated[idx],
+                  status: 'online',
+                  hostname: nodeAddr,
+                  latency_ms: node.latency_ms ?? 1,
+                  last_seen: new Date(node.last_seen_epoch_ms).toISOString(),
+                };
+              } else {
+                updated.push({
+                  id: node.device_id,
+                  name: node.hostname,
+                  hostname: nodeAddr,
+                  status: 'online',
+                  os_info: node.os_info,
+                  last_seen: new Date(node.last_seen_epoch_ms).toISOString(),
+                  tags: ['lan-live'],
+                  notes: `Auto-discovered on LAN (${nodeAddr})`,
+                  latency_ms: node.latency_ms ?? 1,
+                  is_favorite: false,
+                });
+              }
+            }
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.warn('LAN discovery poll error:', err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
   }, []);
 
   // Handle device connect (from card or dialog)
@@ -46,30 +89,36 @@ export const App: React.FC = () => {
     // Look up target or generate placeholder
     const existing = devices.find((d) => d.id === deviceId);
     const targetName = existing ? existing.name : `Host-${deviceId.slice(3, 7)}`;
+    const targetAddress = existing?.hostname || '127.0.0.1:48120';
 
-    // Trigger simulated connection progression
-    await deviceService.simulateConnect(
-      deviceId,
-      targetName,
-      password,
-      (updatedSession) => {
-        setActiveSessions((prev) => {
-          const index = prev.findIndex((s) => s.session_id === updatedSession.session_id);
-          if (index >= 0) {
-            const next = [...prev];
-            next[index] = updatedSession;
-            return next;
-          } else {
-            return [...prev, updatedSession];
-          }
-        });
-        setActiveSessionId(updatedSession.session_id);
-      }
-    );
+    try {
+      await deviceService.connectLanSession(
+        deviceId,
+        targetName,
+        targetAddress,
+        password,
+        (updatedSession) => {
+          setActiveSessions((prev) => {
+            const index = prev.findIndex((s) => s.session_id === updatedSession.session_id);
+            if (index >= 0) {
+              const next = [...prev];
+              next[index] = updatedSession;
+              return next;
+            } else {
+              return [...prev, updatedSession];
+            }
+          });
+          setActiveSessionId(updatedSession.session_id);
+        }
+      );
+    } catch (err) {
+      console.error('Connection attempt failed:', err);
+    }
   };
 
   // Terminate specific session
-  const handleCloseSession = (sessionId: string) => {
+  const handleCloseSession = async (sessionId: string) => {
+    await deviceService.disconnectSession(sessionId);
     setActiveSessions((prev) => {
       const remaining = prev.filter((s) => s.session_id !== sessionId);
       if (sessionId === activeSessionId && remaining.length > 0) {
@@ -80,7 +129,8 @@ export const App: React.FC = () => {
   };
 
   // Terminate all sessions
-  const handleDisconnectAll = () => {
+  const handleDisconnectAll = async () => {
+    await deviceService.disconnectSession();
     setActiveSessions([]);
     setActiveSessionId('');
   };

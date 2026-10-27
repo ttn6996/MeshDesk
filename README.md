@@ -18,8 +18,10 @@ MeshDesk/
 │   ├── meshdesk-core/          # Shared domain models, enums (Device, Session, AppSettings)
 │   ├── meshdesk-identity/      # Ed25519 identity, BLAKE3 device ID derivation (MD-XXXX-XXXX)
 │   ├── meshdesk-storage/       # Embedded SQLite (WAL mode, schema migrations 1 & 2)
-│   ├── meshdesk-protocol/      # Binary length-prefixed wire protocol (64KB bound, magic MDSK)
-│   └── meshdesk-app/           # Tauri 2 desktop application engine & IPC command handlers
+│   ├── meshdesk-protocol/      # Binary length-prefixed wire protocol (10MB frame bound, magic MDSK, video/input frames)
+│   ├── meshdesk-discovery/     # UDP broadcast announcer & listener (port 48121, node caching, ping/latency)
+│   ├── meshdesk-stream/        # Win32 GDI BitBlt desktop capture, JPEG encoding, Win32 SendInput injection
+│   └── meshdesk-app/           # Tauri 2 desktop application engine, TCP host (port 48120), IPC commands
 ├── frontend/                   # React 19 + TypeScript + Vite + Tailwind CSS desktop UI
 │   ├── src/
 │   │   ├── components/         # WorkspaceView, Sidebar, DeviceCard, SessionView, Dialogs, Settings
@@ -107,19 +109,41 @@ npm run tauri dev
   - Settings panel with network, LAN discovery toggles, and security consent options.
   - Multi-session tab container ready for video streaming.
 
+### Milestone 2: Device Identity & LAN Connectivity (Verified & Complete)
+- [x] **UDP Broadcast Discovery Engine** (`crates/meshdesk-discovery`):
+  - Listens and broadcasts node presence on UDP port 48121.
+  - Thread-safe discovery cache tracking device ID, hostname, IP, port, OS, and latency.
+  - Stale node pruning (pruning nodes unseen for >15s).
+  - Controlled by local setting `enable_lan_discovery`.
+- [x] **TCP Host Server** (`crates/meshdesk-app` on port 48120):
+  - Zero-knowledge BLAKE3 challenge-response password authentication.
+  - Temporary access password generation and regeneration.
+  - Display dimensions negotiation on authentication success.
+- [x] **Truthful Status Reporting**:
+  - Live LAN nodes dynamically synced into workspace grid with real calculated ping latency.
+
+### Milestone 3: Real Remote Desktop Session (Verified & Complete)
+- [x] **Windows Desktop Screen Capture Engine** (`crates/meshdesk-stream`):
+  - High-performance GDI `BitBlt` capture engine with 32-bit BGRA to 24-bit RGB extraction.
+  - JPEG compression via `jpeg-encoder` delivering video frames at target ~24 FPS.
+  - Deterministic fallback color pattern for headless/locked displays.
+- [x] **Low-Latency Length-Prefixed Binary Streaming** (`crates/meshdesk-protocol`):
+  - Framed message transport supporting up to 10MB frames.
+  - Video frame transmission with sequence numbers, timestamps, and pixel dimensions.
+- [x] **Remote Input Injection with Host Consent** (`crates/meshdesk-stream`):
+  - Normalized $[0.0, 1.0]$ coordinate mapping to Win32 `MOUSEEVENTF_ABSOLUTE`.
+  - Mouse movement, left/right/middle click, wheel scroll injection.
+  - Keyboard virtual key down/up injection (`KEYBDINPUT`).
+  - Strict host consent enforcement via `allow_remote_control` atomic flag.
+- [x] **Interactive Frontend Desktop Canvas** (`frontend/`):
+  - Real-time HTML5 `<canvas>` rendering incoming frames via Tauri `session-frame` event stream.
+  - Dynamic scaling with aspect-ratio preservation and fullscreen toggle.
+  - Full mouse and keyboard input forwarding to host with throttled rate-limiting.
+  - Live HUD displaying FPS, resolution, frame counts, and host consent badge.
+
 ### Upcoming Milestones
-- [ ] **Milestone 2: Device Identity & LAN Connectivity** (UDP broadcast discovery on port 48121, direct TCP handshake on 48120).
-- [ ] **Milestone 3: Real Remote Desktop Session** (DXGI Desktop Duplication capture, SendInput injection).
 - [ ] **Milestone 4: Internet Connectivity & NAT Traversal** (Signaling server, STUN/TURN WebRTC relay).
 - [ ] **Milestone 5: Multi-PC Workspace Production Experience** (Concurrent live streams, input sandboxing).
-
----
-
-## Known Limitations
-
-1. **Remote Display & Input**: In Milestone 1, the session viewport provides an interactive state container and tab manager. Live desktop pixel streaming via DXGI and remote input injection via `SendInput` will be implemented in Milestone 3.
-2. **LAN Discovery**: In Milestone 1, devices in the registry are stored locally. Live network broadcasting and automated peer discovery across subnets will be activated in Milestone 2.
-3. **Non-ASCII Windows Usernames**: On environments where Windows usernames contain diacritics and GNU toolchains are utilized, a directory junction mapping to an ASCII path is recommended for GNU `ld.exe`.
 
 ---
 

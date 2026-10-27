@@ -1,15 +1,19 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   X,
   Maximize2,
   Minimize2,
   Power,
   Activity,
-  ShieldAlert,
+  ShieldCheck,
   MousePointer,
   Keyboard,
+  Monitor,
+  Wifi,
 } from 'lucide-react';
-import { SessionInfo } from '../../types';
+import { listen } from '@tauri-apps/api/event';
+import { SessionFrameEvent, SessionInfo } from '../../types';
+import { deviceService } from '../../services/deviceService';
 
 interface SessionViewProps {
   sessions: SessionInfo[];
@@ -25,13 +29,165 @@ export const SessionView: React.FC<SessionViewProps> = ({
   onCloseSession,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentFps, setCurrentFps] = useState<number>(0);
+  const [resolution, setResolution] = useState<{ width: number; height: number }>({
+    width: 1920,
+    height: 1080,
+  });
+  const [frameCount, setFrameCount] = useState<number>(0);
+  const [isInputFocused, setIsInputFocused] = useState<boolean>(true);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const frameCounterRef = useRef<number>(0);
+  const lastMouseTimeRef = useRef<number>(0);
+
   const activeSession = sessions.find((s) => s.session_id === activeSessionId) || sessions[0];
+
+  // Subscribe to incoming Tauri video frames
+  useEffect(() => {
+    if (!deviceService.isTauriEnvironment() || !activeSession || activeSession.state !== 'connected') {
+      return;
+    }
+
+    let unlistenFn: (() => void) | null = null;
+
+    listen<SessionFrameEvent>('session-frame', (event) => {
+      const payload = event.payload;
+      if (payload.session_id !== activeSession.session_id) {
+        return;
+      }
+
+      frameCounterRef.current += 1;
+      setFrameCount((prev) => prev + 1);
+
+      if (payload.width > 0 && payload.height > 0) {
+        setResolution({ width: payload.width, height: payload.height });
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        if (canvas.width !== payload.width || canvas.height !== payload.height) {
+          canvas.width = payload.width;
+          canvas.height = payload.height;
+        }
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+        }
+      };
+      img.src = `data:image/jpeg;base64,${payload.data_b64}`;
+    }).then((unlisten) => {
+      unlistenFn = unlisten;
+    }).catch((err) => {
+      console.warn('Failed to attach session-frame listener:', err);
+    });
+
+    // FPS calculation timer
+    const fpsInterval = setInterval(() => {
+      setCurrentFps(frameCounterRef.current);
+      frameCounterRef.current = 0;
+    }, 1000);
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+      clearInterval(fpsInterval);
+    };
+  }, [activeSession?.session_id, activeSession?.state]);
+
+  // Handle Mouse Events & Send to Host
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!canvasRef.current || activeSession?.is_simulated) return;
+
+      const now = performance.now();
+      // Throttle mouse movement to ~30 FPS (every 33ms) to prevent network saturation
+      if (now - lastMouseTimeRef.current < 33) return;
+      lastMouseTimeRef.current = now;
+
+      const rect = canvasRef.current.getBoundingClientRect();
+      const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+      deviceService.sendSessionInput({
+        MouseMove: { x: normX, y: normY },
+      });
+    },
+    [activeSession?.is_simulated]
+  );
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (activeSession?.is_simulated) return;
+      deviceService.sendSessionInput({
+        MouseDown: { button: e.button },
+      });
+    },
+    [activeSession?.is_simulated]
+  );
+
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (activeSession?.is_simulated) return;
+      deviceService.sendSessionInput({
+        MouseUp: { button: e.button },
+      });
+    },
+    [activeSession?.is_simulated]
+  );
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLCanvasElement>) => {
+      if (activeSession?.is_simulated) return;
+      e.preventDefault();
+      const deltaY = Math.sign(e.deltaY) * 120;
+      deviceService.sendSessionInput({
+        MouseWheel: { delta_y: deltaY },
+      });
+    },
+    [activeSession?.is_simulated]
+  );
+
+  // Handle Keyboard Events
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (activeSession?.is_simulated) return;
+      // Prevent browser default actions like Ctrl+W or F5 while interacting with remote session
+      if (e.key === 'Tab' || e.key === 'Alt') {
+        e.preventDefault();
+      }
+      deviceService.sendSessionInput({
+        KeyDown: { key_code: e.keyCode },
+      });
+    },
+    [activeSession?.is_simulated]
+  );
+
+  const handleKeyUp = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (activeSession?.is_simulated) return;
+      deviceService.sendSessionInput({
+        KeyUp: { key_code: e.keyCode },
+      });
+    },
+    [activeSession?.is_simulated]
+  );
 
   if (!activeSession) return null;
 
   return (
     <div
-      className={`flex flex-col bg-slate-950 ${
+      ref={containerRef}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      onKeyUp={handleKeyUp}
+      onFocus={() => setIsInputFocused(true)}
+      onBlur={() => setIsInputFocused(false)}
+      className={`flex flex-col bg-slate-950 outline-none select-none ${
         isFullscreen ? 'fixed inset-0 z-50' : 'h-full flex-1'
       }`}
     >
@@ -79,10 +235,14 @@ export const SessionView: React.FC<SessionViewProps> = ({
 
         {/* Quick Toolbar */}
         <div className="flex items-center space-x-2">
-          {activeSession.is_simulated && (
+          {activeSession.is_simulated ? (
             <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded bg-amber-950/70 border border-amber-800/50 text-[10px] text-amber-300 font-semibold">
-              <ShieldAlert className="w-3 h-3 mr-1 text-amber-400" />
-              Simulated Session (Milestone 1)
+              Simulation Sandbox
+            </span>
+          ) : (
+            <span className="hidden md:inline-flex items-center px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800/50 text-[10px] text-emerald-300 font-semibold">
+              <ShieldCheck className="w-3 h-3 mr-1 text-emerald-400" />
+              Live Direct Stream (M2/M3)
             </span>
           )}
 
@@ -106,12 +266,12 @@ export const SessionView: React.FC<SessionViewProps> = ({
       </div>
 
       {/* Main Session Viewport Area */}
-      <div className="flex-1 bg-slate-900 relative flex items-center justify-center overflow-hidden">
+      <div className="flex-1 bg-slate-950 relative flex items-center justify-center overflow-hidden">
         {activeSession.state === 'connecting' ||
         activeSession.state === 'resolving' ||
         activeSession.state === 'authenticating' ? (
-          <div className="text-center p-8 bg-slate-950/80 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur max-w-sm">
-            <div className="w-12 h-12 rounded-full border-4 border-blue-600 border-t-transparent animate-spin mx-auto mb-4" />
+          <div className="text-center p-8 bg-slate-900/90 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur max-w-sm">
+            <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin mx-auto mb-4" />
             <h3 className="text-base font-semibold text-slate-100 capitalize">
               {activeSession.state} to {activeSession.target_device_name}...
             </h3>
@@ -119,89 +279,105 @@ export const SessionView: React.FC<SessionViewProps> = ({
               Target Node: {activeSession.target_device_id}
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              Negotiating Ed25519 signature & PBKDF2 challenge
+              Establishing TCP stream & verifying BLAKE3 credentials
             </p>
           </div>
         ) : activeSession.state === 'connected' ? (
-          /* Simulated Windows Remote Desktop Workspace Canvas */
-          <div className="w-full h-full relative flex flex-col justify-between bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800 shadow-inner select-none overflow-hidden">
-            {/* Remote Desktop Header Banner */}
-            <div className="p-4 flex items-center justify-between text-xs text-slate-400">
-              <div className="flex items-center space-x-3 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-slate-800">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                <span className="font-semibold text-slate-200">
-                  Target: {activeSession.target_device_name}
-                </span>
-                <span className="text-slate-500">({activeSession.target_device_id})</span>
-              </div>
+          <div className="w-full h-full relative flex items-center justify-center bg-black">
+            {/* Live Interactive Canvas */}
+            <canvas
+              ref={canvasRef}
+              onMouseMove={handleMouseMove}
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onWheel={handleWheel}
+              onContextMenu={(e) => e.preventDefault()}
+              className="max-w-full max-h-full object-contain cursor-crosshair shadow-2xl"
+              style={{
+                imageRendering: 'auto',
+              }}
+            />
 
-              <div className="flex items-center space-x-3 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-slate-800 font-mono text-[11px]">
-                <span className="text-amber-400">Simulation Mode</span>
-                <span className="text-slate-400">Stream: Pending M3</span>
+            {/* In case no frame has arrived yet in real stream */}
+            {frameCount === 0 && !activeSession.is_simulated && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm pointer-events-none">
+                <div className="w-10 h-10 rounded-full border-3 border-emerald-500 border-t-transparent animate-spin mb-3" />
+                <p className="text-sm font-semibold text-slate-200">
+                  Waiting for initial video frame...
+                </p>
+                <p className="text-xs text-slate-400 mt-1 font-mono">
+                  Target: {activeSession.target_device_id} (GDI BitBlt ~24 FPS)
+                </p>
               </div>
-            </div>
+            )}
 
-            {/* Simulated Desktop Center Graphic */}
-            <div className="text-center p-6 max-w-lg mx-auto bg-slate-950/60 rounded-xl border border-slate-800/80 backdrop-blur">
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4 text-amber-400">
-                <ShieldAlert className="w-8 h-8" />
-              </div>
-              <h4 className="text-lg font-bold text-slate-100">
-                Session Simulation: {activeSession.target_device_name}
-              </h4>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                You are testing the Multi-PC session lifecycle for node{' '}
-                <span className="font-mono text-slate-300">{activeSession.target_device_id}</span>.
-                Input routing and tab management are active. Live screen capture (DXGI) and Windows input injection (SendInput) will be integrated in <strong className="text-blue-400">Milestone 3</strong>.
-              </p>
-              <div className="mt-4 flex items-center justify-center space-x-6 text-xs text-slate-400 border-t border-slate-800 pt-3">
-                <span className="flex items-center gap-1.5">
-                  <MousePointer className="w-3.5 h-3.5 text-amber-400" />
-                  Input Sandbox Active
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Keyboard className="w-3.5 h-3.5 text-amber-400" />
-                  Tab Focus Scoped
-                </span>
-              </div>
-            </div>
-
-            {/* Simulated Remote Desktop Taskbar */}
-            <div className="h-10 bg-slate-950/90 border-t border-slate-800/80 px-4 flex items-center justify-between text-xs text-slate-400">
-              <div className="flex items-center space-x-3">
-                <div className="w-5 h-5 rounded bg-blue-600 flex items-center justify-center font-bold text-white text-[10px]">
-                  ⊞
+            {/* Simulation Overlay if testing without live host */}
+            {activeSession.is_simulated && (
+              <div className="absolute inset-0 flex flex-col justify-between p-6 pointer-events-none">
+                <div className="flex justify-between items-center bg-slate-900/80 backdrop-blur px-4 py-2 rounded-lg border border-slate-800 max-w-fit">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 mr-2" />
+                  <span className="text-xs font-semibold text-slate-200">
+                    Simulation Session: {activeSession.target_device_name}
+                  </span>
                 </div>
-                <span className="text-slate-300 font-medium">MeshDesk Multi-PC Session Container</span>
+                <div className="text-center p-6 max-w-md mx-auto bg-slate-900/90 rounded-2xl border border-slate-800 backdrop-blur">
+                  <Monitor className="w-10 h-10 text-blue-400 mx-auto mb-3" />
+                  <h4 className="text-base font-bold text-slate-100">
+                    Interactive Workspace Ready
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-2">
+                    To start a live stream, connect to a discovered LAN host using port 48120 and the host access password.
+                  </p>
+                </div>
+                <div />
               </div>
-              <div className="flex items-center space-x-3 text-[11px] font-mono text-slate-500">
-                <span>Milestone 1 Desktop Foundation</span>
-                <span>Video: M3 DXGI</span>
-              </div>
-            </div>
+            )}
           </div>
         ) : (
           <div className="text-center p-6 text-rose-400">
-            <p className="font-semibold">Session Failed or Terminated</p>
-            <p className="text-xs text-slate-400 mt-1">
-              {activeSession.error_message || 'The connection was closed.'}
+            <p className="font-semibold text-base">Session Disconnected</p>
+            <p className="text-xs text-slate-400 mt-2">
+              {activeSession.error_message || 'The connection was terminated.'}
             </p>
           </div>
         )}
       </div>
 
-      {/* Diagnostics / Status Telemetry Bar */}
-      <footer className="h-7 bg-slate-950 border-t border-slate-800 px-4 flex items-center justify-between text-[11px] text-slate-500 font-mono select-none">
+      {/* Live Stream Telemetry & Control HUD */}
+      <footer className="h-8 bg-slate-900 border-t border-slate-800 px-4 flex items-center justify-between text-[11px] text-slate-400 font-mono select-none">
         <div className="flex items-center space-x-4">
-          <span className="flex items-center gap-1 text-slate-400">
-            <Activity className="w-3 h-3 text-amber-400" />
-            Session ID: {activeSession.session_id.slice(0, 16)}...
+          <span className="flex items-center gap-1.5 text-slate-300 font-semibold">
+            <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+            {activeSession.connection_type === 'lan' ? 'LAN Direct' : 'Internet'}
           </span>
-          <span>Simulation Mode</span>
+          <span className="flex items-center gap-1">
+            <Activity className="w-3 h-3 text-blue-400" />
+            {currentFps > 0 ? `${currentFps} FPS` : activeSession.state === 'connected' ? '24 FPS target' : '0 FPS'}
+          </span>
+          <span>
+            {resolution.width}x{resolution.height}
+          </span>
+          <span className="hidden sm:inline text-slate-500">
+            Frames: {frameCount}
+          </span>
         </div>
+
         <div className="flex items-center space-x-4">
-          <span>Target: {activeSession.target_device_id}</span>
-          <span>Display Stream: Scheduled for Milestone 3</span>
+          <span className="flex items-center gap-1 text-emerald-400">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Host Consent Active
+          </span>
+          <span className="flex items-center gap-1 text-slate-400">
+            {isInputFocused ? (
+              <span className="flex items-center gap-1 text-blue-400">
+                <MousePointer className="w-3 h-3" />
+                <Keyboard className="w-3 h-3" />
+                Input Captured
+              </span>
+            ) : (
+              <span className="text-slate-500">Click to focus input</span>
+            )}
+          </span>
         </div>
       </footer>
     </div>

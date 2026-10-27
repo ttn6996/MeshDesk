@@ -1,5 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
-import { AppSettings, Device, LocalIdentity, SessionInfo } from '../types';
+import {
+  AppSettings,
+  Device,
+  DiscoveredNode,
+  HostAccessCredentials,
+  InputKind,
+  LocalIdentity,
+  SessionInfo,
+} from '../types';
 
 const STORAGE_KEY_DEVICES = 'meshdesk_persistent_devices_v1';
 const STORAGE_KEY_SETTINGS = 'meshdesk_persistent_settings_v1';
@@ -83,7 +91,18 @@ export interface IDeviceService {
     password: string,
     onStateChange: (state: SessionInfo) => void
   ): Promise<SessionInfo>;
-  disconnectSession(sessionId: string): Promise<void>;
+  getLanDevices(): Promise<DiscoveredNode[]>;
+  getHostAccessCredentials(): Promise<HostAccessCredentials>;
+  generateNewAccessPassword(): Promise<HostAccessCredentials>;
+  connectLanSession(
+    targetDeviceId: string,
+    targetName: string,
+    targetAddress: string,
+    password: string,
+    onStateChange?: (state: SessionInfo) => void
+  ): Promise<SessionInfo>;
+  sendSessionInput(input: InputKind): Promise<void>;
+  disconnectSession(sessionId?: string): Promise<void>;
 }
 
 function checkIsTauri(): boolean {
@@ -280,8 +299,119 @@ class HybridDeviceService implements IDeviceService {
     return connectedSession;
   }
 
-  async disconnectSession(_sessionId: string): Promise<void> {
-    await new Promise((r) => setTimeout(r, 150));
+  async getLanDevices(): Promise<DiscoveredNode[]> {
+    if (this.isTauriEnvironment()) {
+      try {
+        return await invoke<DiscoveredNode[]>('cmd_get_lan_devices');
+      } catch (err) {
+        console.warn('Tauri IPC failed for get_lan_devices:', err);
+      }
+    }
+    return [];
+  }
+
+  async getHostAccessCredentials(): Promise<HostAccessCredentials> {
+    if (this.isTauriEnvironment()) {
+      try {
+        return await invoke<HostAccessCredentials>('cmd_get_host_access_credentials');
+      } catch (err) {
+        console.warn('Tauri IPC failed for get_host_access_credentials:', err);
+      }
+    }
+    return {
+      device_id: 'MD-LOCAL-HOST',
+      access_password: 'MESH-STANDALONE',
+      port: 48120,
+      is_accepting_connections: true,
+    };
+  }
+
+  async generateNewAccessPassword(): Promise<HostAccessCredentials> {
+    if (this.isTauriEnvironment()) {
+      try {
+        return await invoke<HostAccessCredentials>('cmd_generate_new_access_password');
+      } catch (err) {
+        console.warn('Tauri IPC failed for generate_new_access_password:', err);
+      }
+    }
+    return this.getHostAccessCredentials();
+  }
+
+  async connectLanSession(
+    targetDeviceId: string,
+    targetName: string,
+    targetAddress: string,
+    password: string,
+    onStateChange?: (state: SessionInfo) => void
+  ): Promise<SessionInfo> {
+    if (onStateChange) {
+      onStateChange({
+        session_id: `lan-init-${Date.now()}`,
+        target_device_id: targetDeviceId,
+        target_device_name: targetName,
+        connection_type: 'lan',
+        state: 'connecting',
+        started_at: new Date().toISOString(),
+        bytes_received: 0,
+        bytes_sent: 0,
+        is_simulated: false,
+      });
+    }
+
+    if (this.isTauriEnvironment()) {
+      try {
+        const sessionInfo = await invoke<SessionInfo>('cmd_connect_lan_session', {
+          targetDeviceId,
+          targetName,
+          targetAddress,
+          password,
+        });
+        if (onStateChange) {
+          onStateChange(sessionInfo);
+        }
+        return sessionInfo;
+      } catch (err) {
+        console.error('Tauri IPC connect_lan_session failed:', err);
+        const errSession: SessionInfo = {
+          session_id: `failed-${Date.now()}`,
+          target_device_id: targetDeviceId,
+          target_device_name: targetName,
+          connection_type: 'lan',
+          state: 'failed',
+          started_at: new Date().toISOString(),
+          bytes_received: 0,
+          bytes_sent: 0,
+          is_simulated: false,
+          error_message: String(err),
+        };
+        if (onStateChange) {
+          onStateChange(errSession);
+        }
+        throw err;
+      }
+    }
+
+    return this.simulateConnect(targetDeviceId, targetName, password, onStateChange || (() => {}));
+  }
+
+  async sendSessionInput(input: InputKind): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_send_session_input', { input });
+      } catch {
+        // Ignored for high-frequency input
+      }
+    }
+  }
+
+  async disconnectSession(_sessionId?: string): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_disconnect_session');
+      } catch (err) {
+        console.warn('Tauri IPC disconnect_session failed:', err);
+      }
+    }
   }
 }
 

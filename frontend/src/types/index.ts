@@ -59,3 +59,38 @@ export interface AppSettings {
   session_timeout_minutes: number;
   theme: 'dark' | 'light';
 }
+
+export interface DiscoveredNode {
+  device_id: string;
+  hostname: string;
+  ip: string;
+  port: number;
+  os_info: string;
+  last_seen_epoch_ms: number;
+  latency_ms?: number;
+}
+
+export interface HostAccessCredentials {
+  device_id: string;
+  access_password: string;
+  port: number;
+  is_accepting_connections: boolean;
+}
+
+export interface SessionFrameEvent {
+  session_id: string;
+  seq: number;
+  width: number;
+  height: number;
+  format: string;
+  data_b64: string;
+}
+
+export type InputKind =
+  | { MouseMove: { x: number; y: number } }
+  | { MouseDown: { button: number } }
+  | { MouseUp: { button: number } }
+  | { MouseWheel: { delta_y: number } }
+  | { KeyDown: { key_code: number } }
+  | { KeyUp: { key_code: number } };
+

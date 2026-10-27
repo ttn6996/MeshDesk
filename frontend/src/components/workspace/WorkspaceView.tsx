@@ -116,7 +116,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({
                   {avgLatency} <span className="text-xs text-slate-500 font-normal">ms</span>
                 </>
               ) : (
-                <span className="text-sm text-slate-500 font-normal">Pending M2</span>
+                <span className="text-sm text-slate-500 font-normal">No Live Node</span>
               )}
             </div>
           </div>

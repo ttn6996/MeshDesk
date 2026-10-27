@@ -4,7 +4,19 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_MAGIC: [u8; 4] = [0x4D, 0x44, 0x53, 0x4B]; // "MDSK"
 pub const PROTOCOL_VERSION_MAJOR: u8 = 1;
 pub const PROTOCOL_VERSION_MINOR: u8 = 0;
-pub const MAX_FRAME_SIZE: usize = 65_536; // 64 KB limit
+pub const MAX_FRAME_SIZE: usize = 10_485_760; // 10 MB limit for JPEG/high-res frames
+
+/// Detailed mouse and keyboard input events
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InputKind {
+    MouseMove { x_norm: f32, y_norm: f32 },
+    MouseDown { button: u8 }, // 1 = Left, 2 = Right, 3 = Middle
+    MouseUp { button: u8 },
+    MouseWheel { delta: i32 },
+    KeyDown { vk: u32, key: String },
+    KeyUp { vk: u32, key: String },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -32,6 +44,8 @@ pub enum Message {
         session_token: String,
         expires_in_seconds: u32,
         granted_permissions: Vec<String>,
+        display_width: u32,
+        display_height: u32,
     },
     AuthFailure {
         code: String,
@@ -46,13 +60,19 @@ pub enum Message {
         seq: u64,
         echo_timestamp_ms: u64,
     },
+    VideoFrame {
+        session_id: String,
+        seq: u64,
+        timestamp_ms: u64,
+        width: u32,
+        height: u32,
+        format: String,
+        data_b64: String,
+    },
     InputEvent {
         session_id: String,
         seq: u64,
-        event_type: String,
-        x_norm: Option<f32>,
-        y_norm: Option<f32>,
-        key_code: Option<u32>,
+        input: InputKind,
     },
     Disconnect {
         session_id: String,
@@ -146,6 +166,36 @@ mod tests {
 
         let decoded = FrameCodec::decode(&encoded).unwrap();
         assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_video_frame_and_input_roundtrip() {
+        let frame_msg = Message::VideoFrame {
+            session_id: "sess-123".into(),
+            seq: 42,
+            timestamp_ms: 1729680010,
+            width: 1920,
+            height: 1080,
+            format: "jpeg".into(),
+            data_b64: "dGVzdF9mcmFtZV9kYXRh".into(),
+        };
+
+        let encoded = FrameCodec::encode(&frame_msg).unwrap();
+        let decoded = FrameCodec::decode(&encoded).unwrap();
+        assert_eq!(frame_msg, decoded);
+
+        let input_msg = Message::InputEvent {
+            session_id: "sess-123".into(),
+            seq: 43,
+            input: InputKind::MouseMove {
+                x_norm: 0.5,
+                y_norm: 0.25,
+            },
+        };
+
+        let enc_input = FrameCodec::encode(&input_msg).unwrap();
+        let dec_input = FrameCodec::decode(&enc_input).unwrap();
+        assert_eq!(input_msg, dec_input);
     }
 
     #[test]

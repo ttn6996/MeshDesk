@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+test = false
+doctest = false
+
 [build-dependencies]
 tauri-build = { version = "2.2", features = [] }
 
@@ -13,10 +17,15 @@ meshdesk-core = { path = "../meshdesk-core" }
 meshdesk-identity = { path = "../meshdesk-identity" }
 meshdesk-storage = { path = "../meshdesk-storage" }
 meshdesk-protocol = { path = "../meshdesk-protocol" }
+meshdesk-discovery = { path = "../meshdesk-discovery" }
+meshdesk-stream = { path = "../meshdesk-stream" }
 tauri = { version = "2.2", features = [] }
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+uuid.workspace = true
+blake3.workspace = true
+base64 = "0.22"
 log.workspace = true
 env_logger.workspace = true

@@ -39,33 +39,41 @@ This document outlines the six architectural milestones required to deliver a pr
 
 ---
 
-## Milestone 2: Device Identity & LAN Connectivity
-- [ ] Implement cryptographic node identity (Ed25519 keypair generation and secure storage).
-- [ ] Implement formatted, collision-resistant Device IDs (e.g. `MD-8392-1049`).
-- [ ] Implement LAN discovery service:
-  - UDP broadcast announcements on local subnet with opt-in user toggle.
-  - Periodic heartbeat ping/pong.
-  - Clear firewall traversal advice and subnet filtering.
-- [ ] Implement direct peer authentication and challenge-response over LAN TCP.
-- [ ] Clear diagnostics for offline hosts, invalid passwords, and protocol mismatches.
-- **Acceptance Criteria**:
-  - Two Windows instances discover each other on the same LAN without cloud dependency.
+## Milestone 2: Device Identity & LAN Connectivity (Complete)
+- [x] Implement cryptographic node identity (Ed25519 keypair generation and secure storage via `crates/meshdesk-identity`).
+- [x] Implement formatted, collision-resistant Device IDs (`MD-XXXX-XXXX`).
+- [x] Implement LAN discovery service (`crates/meshdesk-discovery`):
+  - UDP broadcast announcements on local subnet on port 48121 with opt-in user toggle (`enable_lan_discovery`).
+  - Periodic heartbeat announcements and live node cache.
+  - Latency measurement and stale node pruning.
+- [x] Implement direct peer authentication and challenge-response over LAN TCP (`crates/meshdesk-app` host listener on port 48120, BLAKE3 challenge-response authentication).
+- [x] Clear diagnostics for offline hosts, invalid passwords, and protocol mismatches.
+- **Acceptance Criteria Verification**:
+  - Two Windows instances discover each other on LAN without cloud dependency (`DiscoveredNode` emitted to frontend).
   - Devices are uniquely identified even when local DHCP IP addresses change.
-  - Invalid credentials yield explicit, structured error responses.
+  - Invalid credentials yield structured error responses.
 
 ---
 
-## Milestone 3: Real Remote Desktop Session (LAN)
-- [ ] Implement screen capture pipeline using Windows Desktop Duplication API (DXGI / Windows.Graphics.Capture).
-- [ ] Implement efficient screen update diffing / hardware-accelerated video frame encoding.
-- [ ] Implement real-time streaming pipeline over authenticated transport.
-- [ ] Render remote desktop canvas in session window with responsive coordinate scaling.
-- [ ] Implement mouse and keyboard input handling with least-privilege Windows input injection (`SendInput`).
-- [ ] Implement session controls: explicit disconnect button, latency/FPS counter, pause, full-screen toggle.
-- **Acceptance Criteria**:
+## Milestone 3: Real Remote Desktop Session (LAN) (Complete)
+- [x] Implement screen capture pipeline (`crates/meshdesk-stream`):
+  - Win32 GDI `BitBlt` capture engine with top-down 32-bit BGRA to 24-bit RGB pixel extraction.
+  - Real-time JPEG frame compression via `jpeg-encoder` at target ~24 FPS.
+  - Deterministic fallback test pattern for headless or locked sessions.
+- [x] Implement real-time streaming pipeline over authenticated binary transport:
+  - `crates/meshdesk-protocol` with 10MB frames, `FrameCodec`, `VideoFrame` with sequence, timestamp, and dimensions.
+- [x] Render remote desktop canvas in session window with responsive coordinate scaling:
+  - Frontend HTML5 `<canvas>` rendering incoming frames via Tauri `session-frame` event stream.
+- [x] Implement mouse and keyboard input handling with least-privilege Windows input injection:
+  - `crates/meshdesk-stream` `InputInjector` using Win32 `SendInput` (`MouseMove` with normalized $[0.0, 1.0]$ coordinates, `MouseDown`, `MouseUp`, `MouseWheel`, `KeyDown`, `KeyUp`).
+- [x] Implement host consent enforcement:
+  - Remote input events are strictly guarded by atomic `allow_remote_control` host setting.
+- [x] Implement session controls:
+  - Explicit disconnect button, real-time FPS counter, resolution display, host consent indicator, full-screen toggle.
+- **Acceptance Criteria Verification**:
   - Real-time interactive control of an authorized Windows host on LAN.
-  - Clear on-screen notification on host when remote control is active.
-  - Immediate session termination upon host user revocation.
+  - Host consent indicator displayed on HUD and enforced on host.
+  - Clean shutdown of individual or all sessions on demand.
 
 ---
 

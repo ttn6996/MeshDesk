@@ -47,3 +47,23 @@ fn run_cli_diagnostics() {
 
     println!("Engine initialized successfully.");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_state_crud() {
+        let state = AppState::new_in_memory().unwrap();
+        let dev = Device::new("MD-1234-5678", "Host-1", "Windows 11");
+        state.save_device(dev).unwrap();
+
+        let list = state.list_devices().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "MD-1234-5678");
+
+        let deleted = state.delete_device("MD-1234-5678").unwrap();
+        assert!(deleted);
+        assert_eq!(state.list_devices().unwrap().len(), 0);
+    }
+}

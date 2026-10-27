@@ -34,21 +34,20 @@ MeshDesk is a Windows-first desktop application engineered to unify multiple com
 
 The codebase is organized as a Cargo workspace with verified boundaries:
 
-### Implemented Workspace Members (Milestone 1 Foundation)
+### Implemented Workspace Members
 | Crate / Subsystem | Path | Primary Responsibility |
 | :--- | :--- | :--- |
 | **`meshdesk-core`** | `crates/meshdesk-core` | Shared domain models (`Device`, `AppSettings`, `SessionInfo`), enums, and cross-cutting error definitions. |
 | **`meshdesk-identity`** | `crates/meshdesk-identity` | Stable machine identity generation, Ed25519 keypair management, collision-resistant device ID encoding (`MD-XXXX-XXXX`), and signature verification. |
 | **`meshdesk-storage`** | `crates/meshdesk-storage` | Embedded SQLite engine managing persistent device metadata, app settings, and linear schema version migrations. |
-| **`meshdesk-protocol`** | `crates/meshdesk-protocol` | Versioned wire protocol, length-prefixed binary framing (magic `MDSK`, 64KB bound), handshake frames, and message codec. |
-| **`meshdesk-app`** | `crates/meshdesk-app` | Core desktop application engine, `AppState`, persistent paths (`%APPDATA%/MeshDesk`), and Tauri 2 IPC command handlers. |
+| **`meshdesk-protocol`** | `crates/meshdesk-protocol` | Versioned wire protocol, length-prefixed binary framing (magic `MDSK`, 10MB frame bound), handshake frames, video frames, input events, and message codec. |
+| **`meshdesk-discovery`** | `crates/meshdesk-discovery` | UDP broadcast announcer and listener on port 48121, live node caching, latency tracking, and stale node pruning. |
+| **`meshdesk-stream`** | `crates/meshdesk-stream` | Win32 GDI `BitBlt` desktop capture engine, JPEG encoding, test pattern fallback, and Win32 `SendInput` input injection guarded by host consent. |
+| **`meshdesk-app`** | `crates/meshdesk-app` | Desktop application engine, TCP host server (port 48120), client session manager, `AppState`, persistent paths (`%APPDATA%/MeshDesk`), and Tauri 2 IPC commands. |
 | **`meshdesk-desktop`** | `src-tauri` | Desktop application shell for Tauri 2 CLI, windowing configuration, capabilities, and desktop runner. |
-| **`frontend`** | `frontend/` | React 19 + TypeScript + Vite workspace UI, session tabs, responsive device grid, and settings panel. |
+| **`frontend`** | `frontend/` | React 19 + TypeScript + Vite workspace UI, interactive remote desktop canvas, session tabs, responsive device grid, and settings panel. |
 
 ### Planned Modular Components (Subsequent Milestones)
-*Note: To prevent workspace clutter, the following components are scheduled for their respective milestones and are not declared as empty workspace crates:*
-- **`meshdesk-discovery`** (*Milestone 2*): Opt-in UDP broadcast LAN announcements and subnet listener.
-- **`remote-desktop` / `meshdesk-stream`** (*Milestone 3*): Windows Desktop Duplication API (DXGI) capture and SendInput injection.
 - **`meshdesk-signaling`** (*Milestone 4*): Standalone WebSocket signaling server for WebRTC SDP exchange and NAT traversal.
 
 ---

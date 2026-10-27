@@ -5,6 +5,8 @@ members = [
     "crates/meshdesk-identity",
     "crates/meshdesk-storage",
     "crates/meshdesk-protocol",
+    "crates/meshdesk-discovery",
+    "crates/meshdesk-stream",
     "crates/meshdesk-app",
     "src-tauri",
 ]
@@ -26,5 +28,6 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 rand = "0.8"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 blake3 = "1.5"
+jpeg-encoder = "0.6"
 log = "0.4"
 env_logger = "0.11"
