@@ -2,7 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use meshdesk_app::AppState;
-use meshdesk_core::Device;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -37,6 +36,7 @@ fn run_cli_diagnostics() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use meshdesk_core::Device;
 
     #[test]
     fn test_app_state_crud() {

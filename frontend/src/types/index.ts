@@ -108,4 +108,17 @@ export interface SignalingStatusInfo {
   online_peers_count: number;
 }
 
+export interface HostIncomingSessionEvent {
+  session_id: string;
+  client_device_id: string;
+  client_ip: string;
+  granted_permissions: string[];
+}
+
+export interface HostSessionDisconnectedEvent {
+  session_id: string;
+  client_device_id: string;
+  reason: string;
+}
+
 

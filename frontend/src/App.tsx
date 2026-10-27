@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { Radio, PowerOff } from 'lucide-react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { WorkspaceView } from './components/workspace/WorkspaceView';
@@ -12,6 +14,8 @@ import {
   SessionInfo,
   ConnectionMode,
   DiscoveredNode,
+  HostIncomingSessionEvent,
+  HostSessionDisconnectedEvent,
 } from './types';
 import { deviceService } from './services/deviceService';
 
@@ -20,6 +24,7 @@ export const App: React.FC = () => {
   const [localIdentity, setLocalIdentity] = useState<LocalIdentity | null>(null);
   const [activeSessions, setActiveSessions] = useState<SessionInfo[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('');
+  const [incomingHostSessions, setIncomingHostSessions] = useState<HostIncomingSessionEvent[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [currentView, setCurrentView] = useState<'workspace' | 'settings'>('workspace');
@@ -112,11 +117,43 @@ export const App: React.FC = () => {
       }
     }, 3000);
 
+    // Listen for incoming controller connections to this host
+    let unlistenHostConnect: (() => void) | null = null;
+    let unlistenHostDisconnect: (() => void) | null = null;
+
+    if (deviceService.isTauriEnvironment()) {
+      listen<HostIncomingSessionEvent>('host-incoming-session', (event) => {
+        const payload = event.payload;
+        setIncomingHostSessions((prev) => {
+          if (prev.some((s) => s.session_id === payload.session_id)) return prev;
+          return [...prev, payload];
+        });
+      }).then((unlisten) => {
+        unlistenHostConnect = unlisten;
+      });
+
+      listen<HostSessionDisconnectedEvent>('host-session-disconnected', (event) => {
+        const payload = event.payload;
+        setIncomingHostSessions((prev) =>
+          prev.filter((s) => s.session_id !== payload.session_id)
+        );
+      }).then((unlisten) => {
+        unlistenHostDisconnect = unlisten;
+      });
+    }
+
     return () => {
       clearTimeout(scanTimer);
       clearInterval(interval);
+      if (unlistenHostConnect) unlistenHostConnect();
+      if (unlistenHostDisconnect) unlistenHostDisconnect();
     };
   }, []);
+
+  const handleDisconnectHostSession = async (sessionId: string) => {
+    await deviceService.disconnectHostSession(sessionId);
+    setIncomingHostSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+  };
 
   // 1-Click Direct Connect (similar to spacedesk)
   const handleInitiateConnect = (device: Device) => {
@@ -303,6 +340,51 @@ export const App: React.FC = () => {
         onSave={handleSaveDevice}
         device={editingDevice}
       />
+
+      {/* Host Incoming Remote Session Live Overlay Banner */}
+      {incomingHostSessions.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-md w-full animate-in slide-in-from-bottom-4 duration-300">
+          {incomingHostSessions.map((session) => (
+            <div
+              key={session.session_id}
+              className="bg-slate-900/95 border-2 border-emerald-500 rounded-xl p-4 shadow-2xl shadow-emerald-950/60 backdrop-blur-md flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="relative flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500 flex items-center justify-center">
+                    <Radio className="w-5 h-5 text-emerald-400 animate-pulse" />
+                  </div>
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                      Remote Session Active
+                    </span>
+                  </div>
+                  <p className="text-sm font-semibold text-white truncate">
+                    Controller: {session.client_device_id}
+                  </p>
+                  <p className="text-xs text-slate-400 font-mono">
+                    IP: {session.client_ip} • Screen streaming active
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleDisconnectHostSession(session.session_id)}
+                className="flex-shrink-0 px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-rose-900/40 transition-all hover:scale-105"
+                title="Disconnect controller session"
+              >
+                <PowerOff className="w-3.5 h-3.5" />
+                Ngắt kết nối
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

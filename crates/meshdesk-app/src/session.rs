@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -25,6 +26,23 @@ pub struct SessionFrameEvent {
     pub timestamp_ms: u64,
     pub latency_ms: u32,
     pub fps: u32,
+}
+
+/// Event emitted to host frontend webview when an incoming controller session connects
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostIncomingSessionEvent {
+    pub session_id: String,
+    pub client_device_id: String,
+    pub client_ip: String,
+    pub granted_permissions: Vec<String>,
+}
+
+/// Event emitted to host frontend webview when an incoming controller session disconnects
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostSessionDisconnectedEvent {
+    pub session_id: String,
+    pub client_device_id: String,
+    pub reason: String,
 }
 
 /// Helper to read length-prefixed frame from an async stream
@@ -150,11 +168,19 @@ pub async fn connect_to_remote_host(
     access_password: &str,
 ) -> Result<ClientSession> {
     info!("Connecting to remote MeshDesk host at {host_addr}...");
-    let stream = TcpStream::connect(host_addr).await.map_err(|e| {
-        MeshDeskError::NetworkError(format!(
-            "Could not connect to {host_addr}. Ensure MeshDesk is running on target machine ({e})"
-        ))
-    })?;
+    let connect_timeout = Duration::from_secs(5);
+    let stream = tokio::time::timeout(connect_timeout, TcpStream::connect(host_addr))
+        .await
+        .map_err(|_| {
+            MeshDeskError::NetworkError(format!(
+                "Could not connect to {host_addr} (Connection timed out after 5s). Ensure MeshDesk is running on the target machine and Windows Defender Firewall is not blocking port 48120."
+            ))
+        })?
+        .map_err(|e| {
+            MeshDeskError::NetworkError(format!(
+                "Could not connect to {host_addr}: {e}. Ensure MeshDesk is running on target machine."
+            ))
+        })?;
 
     let (mut reader, mut writer) = stream.into_split();
 
@@ -173,8 +199,14 @@ pub async fn connect_to_remote_host(
     };
     write_frame(&mut writer, &hello).await?;
 
-    // 2. Read HelloAck
-    let ack = read_frame(&mut reader).await?;
+    // 2. Read HelloAck with 5s timeout
+    let ack = tokio::time::timeout(Duration::from_secs(5), read_frame(&mut reader))
+        .await
+        .map_err(|_| {
+            MeshDeskError::NetworkError(
+                "Timeout waiting for response from remote host (HelloAck)".into(),
+            )
+        })??;
     let (salt, host_nonce) = match ack {
         Message::HelloAck { salt, nonce, .. } => (salt, nonce),
         Message::AuthFailure { message, .. } => {
@@ -201,8 +233,14 @@ pub async fn connect_to_remote_host(
     };
     write_frame(&mut writer, &auth_resp).await?;
 
-    // 4. Read AuthSuccess or AuthFailure
-    let auth_result = read_frame(&mut reader).await?;
+    // 4. Read AuthSuccess or AuthFailure with 5s timeout
+    let auth_result = tokio::time::timeout(Duration::from_secs(5), read_frame(&mut reader))
+        .await
+        .map_err(|_| {
+            MeshDeskError::NetworkError(
+                "Timeout waiting for authentication confirmation from remote host".into(),
+            )
+        })??;
     let session_id = match auth_result {
         Message::AuthSuccess { session_id, .. } => {
             info!("Authentication successful! Established session: {session_id}");
@@ -344,6 +382,8 @@ pub struct HostServer {
     access_password: Arc<RwLock<String>>,
     allow_remote_control: Arc<AtomicBool>,
     is_running: Arc<AtomicBool>,
+    app_handle: Arc<RwLock<Option<AppHandle>>>,
+    active_sessions: Arc<RwLock<HashMap<String, tokio::sync::oneshot::Sender<()>>>>,
 }
 
 impl HostServer {
@@ -361,6 +401,23 @@ impl HostServer {
             access_password: Arc::new(RwLock::new(access_password.to_string())),
             allow_remote_control,
             is_running: Arc::new(AtomicBool::new(false)),
+            app_handle: Arc::new(RwLock::new(None)),
+            active_sessions: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub async fn set_app_handle(&self, handle: AppHandle) {
+        let mut guard = self.app_handle.write().await;
+        *guard = Some(handle);
+    }
+
+    pub async fn disconnect_session(&self, session_id: &str) -> bool {
+        let mut sessions = self.active_sessions.write().await;
+        if let Some(tx) = sessions.remove(session_id) {
+            let _ = tx.send(());
+            true
+        } else {
+            false
         }
     }
 
@@ -392,6 +449,8 @@ impl HostServer {
         let password_arc = Arc::clone(&self.access_password);
         let allow_control = Arc::clone(&self.allow_remote_control);
         let is_running = Arc::clone(&self.is_running);
+        let app_handle = Arc::clone(&self.app_handle);
+        let active_sessions = Arc::clone(&self.active_sessions);
 
         tokio::spawn(async move {
             while is_running.load(Ordering::Relaxed) {
@@ -402,10 +461,20 @@ impl HostServer {
                         let h_name = host_name.read().await.clone();
                         let pw = password_arc.read().await.clone();
                         let consent = Arc::clone(&allow_control);
+                        let app_h = Arc::clone(&app_handle);
+                        let sessions_map = Arc::clone(&active_sessions);
 
                         tokio::spawn(async move {
-                            if let Err(e) =
-                                handle_incoming_controller(stream, h_id, h_name, pw, consent).await
+                            if let Err(e) = handle_incoming_controller(
+                                stream,
+                                h_id,
+                                h_name,
+                                pw,
+                                consent,
+                                app_h,
+                                sessions_map,
+                            )
+                            .await
                             {
                                 warn!("Controller session ended with notice: {e}");
                             }
@@ -434,9 +503,12 @@ async fn handle_incoming_controller(
     host_name: String,
     access_password: String,
     allow_control: Arc<AtomicBool>,
+    app_handle: Arc<RwLock<Option<AppHandle>>>,
+    active_sessions: Arc<RwLock<HashMap<String, tokio::sync::oneshot::Sender<()>>>>,
 ) -> Result<()> {
     let peer_addr = stream.peer_addr().ok();
-    let (mut reader, mut writer) = stream.into_split();
+    let (mut reader, writer) = stream.into_split();
+    let writer = Arc::new(tokio::sync::Mutex::new(writer));
 
     // 1. Read Hello
     let hello = read_frame(&mut reader).await?;
@@ -459,7 +531,10 @@ async fn handle_incoming_controller(
         salt: salt.clone(),
         nonce: host_nonce.clone(),
     };
-    write_frame(&mut writer, &ack).await?;
+    {
+        let mut w = writer.lock().await;
+        write_frame(&mut *w, &ack).await?;
+    }
 
     // 3. Read AuthChallengeResponse
     let auth_msg = read_frame(&mut reader).await?;
@@ -500,7 +575,8 @@ async fn handle_incoming_controller(
             message: "Access password challenge verification failed".into(),
             retry_after_secs: 3,
         };
-        let _ = write_frame(&mut writer, &fail).await;
+        let mut w = writer.lock().await;
+        let _ = write_frame(&mut *w, &fail).await;
         return Err(MeshDeskError::AuthenticationFailed(
             "Invalid access password".into(),
         ));
@@ -512,7 +588,8 @@ async fn handle_incoming_controller(
             message: "Host user has disabled remote control in Settings".into(),
             retry_after_secs: 5,
         };
-        let _ = write_frame(&mut writer, &fail).await;
+        let mut w = writer.lock().await;
+        let _ = write_frame(&mut *w, &fail).await;
         return Err(MeshDeskError::SessionError(
             "Host disabled remote control".into(),
         ));
@@ -528,15 +605,39 @@ async fn handle_incoming_controller(
         display_width: 1920,
         display_height: 1080,
     };
-    write_frame(&mut writer, &auth_ok).await?;
+    {
+        let mut w = writer.lock().await;
+        write_frame(&mut *w, &auth_ok).await?;
+    }
 
     info!("Authorized remote session {session_id} from {client_id}");
 
     let is_active = Arc::new(AtomicBool::new(true));
+    let (disconnect_tx, mut disconnect_rx) = tokio::sync::oneshot::channel::<()>();
+    {
+        let mut sessions = active_sessions.write().await;
+        sessions.insert(session_id.clone(), disconnect_tx);
+    }
+
+    let client_ip = peer_addr
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|| "LAN Peer".into());
+
+    // Emit incoming session notification to Host frontend window
+    if let Some(app) = app_handle.read().await.as_ref() {
+        let event = HostIncomingSessionEvent {
+            session_id: session_id.clone(),
+            client_device_id: client_id.clone(),
+            client_ip: client_ip.clone(),
+            granted_permissions: vec!["view".into(), "control".into()],
+        };
+        let _ = app.emit("host-incoming-session", event);
+    }
 
     // Task 1: Frame capture and streaming loop (captures desktop at ~24 FPS)
     let is_active_stream = Arc::clone(&is_active);
     let sess_id_stream = session_id.clone();
+    let writer_stream = Arc::clone(&writer);
     tokio::spawn(async move {
         let capture = ScreenCaptureEngine::new(75);
         let mut seq = 0u64;
@@ -571,10 +672,12 @@ async fn handle_incoming_controller(
                 data_b64,
             };
 
-            if let Err(e) = write_frame(&mut writer, &frame_msg).await {
+            let mut w = writer_stream.lock().await;
+            if let Err(e) = write_frame(&mut *w, &frame_msg).await {
                 debug!("Host streamer connection ended: {e}");
                 break;
             }
+            drop(w);
 
             // Target ~24 FPS (41ms per frame interval)
             let elapsed = start.elapsed();
@@ -585,37 +688,68 @@ async fn handle_incoming_controller(
         is_active_stream.store(false, Ordering::SeqCst);
     });
 
-    // Task 2: Input receiver loop (receives mouse and keyboard events from controller)
+    // Task 2: Input receiver loop with host termination listener
     let is_active_input = Arc::clone(&is_active);
     let injector = InputInjector::new(allow_control.load(Ordering::Relaxed));
+    let writer_for_dc = Arc::clone(&writer);
+    let sess_id_dc = session_id.clone();
 
-    while is_active_input.load(Ordering::Relaxed) {
-        match read_frame(&mut reader).await {
-            Ok(Message::InputEvent { input, .. }) => {
-                if let Err(e) = injector.inject(&input, 1920, 1080) {
-                    debug!("Input injection failed: {e}");
+    tokio::select! {
+        _ = &mut disconnect_rx => {
+            info!("Host terminated remote controller session {sess_id_dc} manually.");
+            let mut w = writer_for_dc.lock().await;
+            let _ = write_frame(&mut *w, &Message::Disconnect {
+                session_id: sess_id_dc.clone(),
+                reason: "Host user terminated the session".into(),
+            }).await;
+        }
+        _ = async {
+            while is_active_input.load(Ordering::Relaxed) {
+                match read_frame(&mut reader).await {
+                    Ok(Message::InputEvent { input, .. }) => {
+                        if let Err(e) = injector.inject(&input, 1920, 1080) {
+                            debug!("Input injection failed: {e}");
+                        }
+                    }
+                    Ok(Message::ClipboardSync { text, .. }) => {
+                        info!(
+                            "Host received clipboard synchronization ({} chars)",
+                            text.len()
+                        );
+                        let _ = meshdesk_stream::ClipboardManager::set_text(&text);
+                    }
+                    Ok(Message::Disconnect { reason, .. }) => {
+                        info!("Client disconnected from host: {reason}");
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        debug!("Client input channel closed: {e}");
+                        break;
+                    }
                 }
             }
-            Ok(Message::ClipboardSync { text, .. }) => {
-                info!(
-                    "Host received clipboard synchronization ({} chars)",
-                    text.len()
-                );
-                let _ = meshdesk_stream::ClipboardManager::set_text(&text);
-            }
-            Ok(Message::Disconnect { reason, .. }) => {
-                info!("Client disconnected from host: {reason}");
-                break;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                debug!("Client input channel closed: {e}");
-                break;
-            }
-        }
+        } => {}
     }
 
     is_active.store(false, Ordering::SeqCst);
+
+    // Clean up active session
+    {
+        let mut sessions = active_sessions.write().await;
+        sessions.remove(&session_id);
+    }
+
+    // Emit disconnect event to Host frontend
+    if let Some(app) = app_handle.read().await.as_ref() {
+        let event = HostSessionDisconnectedEvent {
+            session_id: session_id.clone(),
+            client_device_id: client_id.clone(),
+            reason: "Session ended".into(),
+        };
+        let _ = app.emit("host-session-disconnected", event);
+    }
+
     info!("Session {session_id} concluded.");
     Ok(())
 }

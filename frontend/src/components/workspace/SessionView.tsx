@@ -13,6 +13,10 @@ import {
   MousePointerClick,
   ClipboardCopy,
   ClipboardCheck,
+  ShieldAlert,
+  Terminal,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { SessionFrameEvent, SessionInfo } from '../../types';
@@ -41,6 +45,7 @@ export const SessionView: React.FC<SessionViewProps> = ({
   const [isInputFocused, setIsInputFocused] = useState<boolean>(true);
   const [allowInput, setAllowInput] = useState<boolean>(true);
   const [clipboardToast, setClipboardToast] = useState<string | null>(null);
+  const [copiedFwCmd, setCopiedFwCmd] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -379,11 +384,76 @@ export const SessionView: React.FC<SessionViewProps> = ({
             )}
           </div>
         ) : (
-          <div className="text-center p-6 text-rose-400">
-            <p className="font-semibold text-base">Session Disconnected</p>
-            <p className="text-xs text-slate-400 mt-2">
-              {activeSession.error_message || 'The connection was terminated.'}
+          <div className="flex flex-col items-center justify-center p-8 max-w-lg w-full text-center my-auto">
+            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mb-4 text-rose-400">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-lg font-bold text-white mb-2">
+              {activeSession.state === 'failed' || activeSession.error_message
+                ? 'Không thể kết nối đến máy đích'
+                : 'Phiên làm việc đã kết thúc'}
+            </h3>
+
+            <p className="text-xs text-rose-300/90 font-mono bg-rose-950/40 border border-rose-900/50 rounded-lg p-3 w-full mb-6 text-left break-all">
+              {activeSession.error_message || 'The connection was terminated by remote peer or network timeout.'}
             </p>
+
+            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 w-full text-left space-y-3 mb-6">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-blue-400" />
+                Hướng dẫn kiểm tra trên máy đích:
+              </p>
+              <ul className="text-xs text-slate-400 space-y-2 list-disc list-inside">
+                <li>
+                  <strong className="text-slate-200">1. Đảm bảo MeshDesk đang chạy</strong> trên máy đích (port 48120).
+                </li>
+                <li>
+                  <strong className="text-slate-200">2. Cho phép Tường lửa (Firewall)</strong>: Mở <span className="text-amber-300 font-mono">PowerShell (Run as Administrator)</span> trên máy đích và dán lệnh sau để mở cổng 48120:
+                </li>
+              </ul>
+
+              <div className="flex items-center justify-between bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+                <code className="text-[11px] font-mono text-emerald-400 truncate select-all pr-2">
+                  New-NetFirewallRule -DisplayName "MeshDesk Host" -Direction Inbound -Protocol TCP -LocalPort 48120 -Action Allow
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText('New-NetFirewallRule -DisplayName "MeshDesk Host" -Direction Inbound -Protocol TCP -LocalPort 48120 -Action Allow');
+                    setCopiedFwCmd(true);
+                    setTimeout(() => setCopiedFwCmd(false), 2000);
+                  }}
+                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs flex items-center gap-1 flex-shrink-0 transition-colors"
+                >
+                  {copiedFwCmd ? (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span className="text-emerald-400">Đã chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Sao chép</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => onCloseSession(activeSession.session_id)}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors"
+              >
+                Đóng tab này
+              </button>
+              <button
+                onClick={() => deviceService.openFirewallSettings()}
+                className="px-4 py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-xs font-semibold transition-colors"
+              >
+                Mở Cài đặt Firewall
+              </button>
+            </div>
           </div>
         )}
       </div>

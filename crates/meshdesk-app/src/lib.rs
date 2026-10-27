@@ -14,11 +14,14 @@ use meshdesk_signaling::{SignalingClient, SignalingServer, DEFAULT_SIGNALING_POR
 use meshdesk_storage::Storage;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::RwLock;
 
 pub mod session;
-pub use session::{ClientSession, HostServer, SessionFrameEvent};
+pub use session::{
+    ClientSession, HostIncomingSessionEvent, HostServer, HostSessionDisconnectedEvent,
+    SessionFrameEvent,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostAccessCredentials {
@@ -620,6 +623,38 @@ pub mod commands {
     ) -> std::result::Result<(), String> {
         connect_signaling(app_handle, state, url).await
     }
+
+    #[tauri::command]
+    pub async fn cmd_disconnect_host_session(
+        state: State<'_, AppState>,
+        session_id: String,
+    ) -> std::result::Result<bool, String> {
+        Ok(state.host_server.disconnect_session(&session_id).await)
+    }
+
+    #[tauri::command]
+    pub async fn disconnect_host_session(
+        state: State<'_, AppState>,
+        session_id: String,
+    ) -> std::result::Result<bool, String> {
+        cmd_disconnect_host_session(state, session_id).await
+    }
+
+    #[tauri::command]
+    pub async fn cmd_open_firewall_settings() -> std::result::Result<(), String> {
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("control.exe")
+                .arg("firewall.cpl")
+                .spawn();
+        }
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn open_firewall_settings() -> std::result::Result<(), String> {
+        cmd_open_firewall_settings().await
+    }
 }
 
 pub fn run() {
@@ -658,6 +693,15 @@ pub fn run() {
     });
 
     tauri::Builder::default()
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let state: State<'_, AppState> = app.state();
+            let host = Arc::clone(&state.host_server);
+            tauri::async_runtime::spawn(async move {
+                host.set_app_handle(handle).await;
+            });
+            Ok(())
+        })
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_local_identity,
@@ -686,6 +730,10 @@ pub fn run() {
             commands::cmd_send_session_input,
             commands::disconnect_session,
             commands::cmd_disconnect_session,
+            commands::disconnect_host_session,
+            commands::cmd_disconnect_host_session,
+            commands::open_firewall_settings,
+            commands::cmd_open_firewall_settings,
             commands::sync_clipboard,
             commands::cmd_sync_clipboard,
             commands::set_session_permission,

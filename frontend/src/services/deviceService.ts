@@ -53,6 +53,8 @@ export interface IDeviceService {
   killAllSessions(): Promise<void>;
   getSignalingStatus(): Promise<SignalingStatusInfo>;
   connectSignaling(url: string): Promise<void>;
+  disconnectHostSession(sessionId: string): Promise<boolean>;
+  openFirewallSettings(): Promise<void>;
 }
 
 function checkIsTauri(): boolean {
@@ -414,6 +416,27 @@ class HybridDeviceService implements IDeviceService {
         await invoke('cmd_connect_signaling', { url });
       } catch (err) {
         console.warn('Tauri IPC connect_signaling failed:', err);
+      }
+    }
+  }
+
+  async disconnectHostSession(sessionId: string): Promise<boolean> {
+    if (this.isTauriEnvironment()) {
+      try {
+        return await invoke<boolean>('cmd_disconnect_host_session', { sessionId });
+      } catch (err) {
+        console.warn('Tauri IPC disconnect_host_session failed:', err);
+      }
+    }
+    return true;
+  }
+
+  async openFirewallSettings(): Promise<void> {
+    if (this.isTauriEnvironment()) {
+      try {
+        await invoke('cmd_open_firewall_settings');
+      } catch (err) {
+        console.warn('Tauri IPC open_firewall_settings failed:', err);
       }
     }
   }
