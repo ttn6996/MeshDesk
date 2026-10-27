@@ -478,7 +478,7 @@ pub mod commands {
         password: String,
     ) -> std::result::Result<SessionInfo, String> {
         let my_id = state.get_local_identity().device_id;
-        
+
         let client_session = session::connect_to_remote_host(
             app_handle,
             &target_address,
@@ -490,8 +490,12 @@ pub mod commands {
         .await
         .map_err(|e| format!("Internet remote connection failed: {e}"))?;
 
-        let mut session_info =
-            SessionInfo::new(&target_device_id, &target_name, ConnectionType::InternetRelay, false);
+        let mut session_info = SessionInfo::new(
+            &target_device_id,
+            &target_name,
+            ConnectionType::InternetRelay,
+            false,
+        );
         session_info.session_id = client_session.session_id.clone();
         session_info.state = SessionState::Connected;
 

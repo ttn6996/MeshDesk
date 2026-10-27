@@ -45,11 +45,7 @@ pub struct WebViewerServer {
 }
 
 impl WebViewerServer {
-    pub fn new(
-        host_id: &str,
-        listen_port: u16,
-        allow_remote_control: Arc<AtomicBool>,
-    ) -> Self {
+    pub fn new(host_id: &str, listen_port: u16, allow_remote_control: Arc<AtomicBool>) -> Self {
         Self {
             listen_port,
             host_id: host_id.to_string(),
@@ -96,7 +92,10 @@ impl WebViewerServer {
                         let h_id = host_id.clone();
 
                         tokio::spawn(async move {
-                            if let Err(e) = handle_web_connection(stream, client_addr, h_id, consent, app_h).await {
+                            if let Err(e) =
+                                handle_web_connection(stream, client_addr, h_id, consent, app_h)
+                                    .await
+                            {
                                 debug!("Web viewer connection finished: {e}");
                             }
                         });
@@ -125,9 +124,10 @@ async fn handle_web_connection(
     app_handle: Arc<RwLock<Option<AppHandle>>>,
 ) -> Result<()> {
     let mut peek_buf = [0u8; 1024];
-    let n = stream.peek(&mut peek_buf).await.map_err(|e| {
-        MeshDeskError::NetworkError(format!("Failed to peek incoming stream: {e}"))
-    })?;
+    let n = stream
+        .peek(&mut peek_buf)
+        .await
+        .map_err(|e| MeshDeskError::NetworkError(format!("Failed to peek incoming stream: {e}")))?;
 
     let header_str = String::from_utf8_lossy(&peek_buf[..n]);
 
@@ -161,9 +161,9 @@ async fn handle_websocket_session(
     allow_control: Arc<AtomicBool>,
     app_handle: Arc<RwLock<Option<AppHandle>>>,
 ) -> Result<()> {
-    let ws_stream = tokio_tungstenite::accept_async(stream).await.map_err(|e| {
-        MeshDeskError::NetworkError(format!("WebSocket handshake failed: {e}"))
-    })?;
+    let ws_stream = tokio_tungstenite::accept_async(stream)
+        .await
+        .map_err(|e| MeshDeskError::NetworkError(format!("WebSocket handshake failed: {e}")))?;
 
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
     let session_id = format!("web-sess-{}", rand::random::<u32>());
@@ -236,26 +236,49 @@ async fn handle_websocket_session(
                 if let Ok(event) = serde_json::from_str::<WebInputEvent>(&text) {
                     match event {
                         WebInputEvent::MouseMove { x_norm, y_norm } => {
-                            let _ = injector.inject(&InputKind::MouseMove { x_norm, y_norm }, 1920, 1080);
+                            let _ = injector.inject(
+                                &InputKind::MouseMove { x_norm, y_norm },
+                                1920,
+                                1080,
+                            );
                         }
                         WebInputEvent::MouseDown { button } => {
-                            let btn = if button == 0 { 1 } else if button == 2 { 2 } else { 3 };
-                            let _ = injector.inject(&InputKind::MouseDown { button: btn }, 1920, 1080);
+                            let btn = if button == 0 {
+                                1
+                            } else if button == 2 {
+                                2
+                            } else {
+                                3
+                            };
+                            let _ =
+                                injector.inject(&InputKind::MouseDown { button: btn }, 1920, 1080);
                         }
                         WebInputEvent::MouseUp { button } => {
-                            let btn = if button == 0 { 1 } else if button == 2 { 2 } else { 3 };
-                            let _ = injector.inject(&InputKind::MouseUp { button: btn }, 1920, 1080);
+                            let btn = if button == 0 {
+                                1
+                            } else if button == 2 {
+                                2
+                            } else {
+                                3
+                            };
+                            let _ =
+                                injector.inject(&InputKind::MouseUp { button: btn }, 1920, 1080);
                         }
                         WebInputEvent::Wheel { delta } => {
                             let _ = injector.inject(&InputKind::MouseWheel { delta }, 1920, 1080);
                         }
                         WebInputEvent::KeyDown { vk, key } => {
                             let key_str = key.unwrap_or_default();
-                            let _ = injector.inject(&InputKind::KeyDown { vk, key: key_str }, 1920, 1080);
+                            let _ = injector.inject(
+                                &InputKind::KeyDown { vk, key: key_str },
+                                1920,
+                                1080,
+                            );
                         }
                         WebInputEvent::KeyUp { vk, key } => {
                             let key_str = key.unwrap_or_default();
-                            let _ = injector.inject(&InputKind::KeyUp { vk, key: key_str }, 1920, 1080);
+                            let _ =
+                                injector.inject(&InputKind::KeyUp { vk, key: key_str }, 1920, 1080);
                         }
                     }
                 }

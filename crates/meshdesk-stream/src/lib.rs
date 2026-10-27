@@ -47,7 +47,11 @@ impl ScreenCaptureEngine {
         };
 
         extern "system" {
-            fn OpenInputDesktop(dwflags: u32, finherit: i32, dwdesiredaccess: u32) -> *mut core::ffi::c_void;
+            fn OpenInputDesktop(
+                dwflags: u32,
+                finherit: i32,
+                dwdesiredaccess: u32,
+            ) -> *mut core::ffi::c_void;
             fn SetThreadDesktop(hdesktop: *mut core::ffi::c_void) -> i32;
             fn CloseDesktop(hdesktop: *mut core::ffi::c_void) -> i32;
         }
@@ -133,9 +137,9 @@ impl ScreenCaptureEngine {
                 DeleteObject(h_bitmap);
                 DeleteDC(hdc_mem);
                 ReleaseDC(std::ptr::null_mut(), hdc_screen);
-                return Err(MeshDeskError::SessionError(
-                    format!("BitBlt screen capture failed with Win32 error code: {err}"),
-                ));
+                return Err(MeshDeskError::SessionError(format!(
+                    "BitBlt screen capture failed with Win32 error code: {err}"
+                )));
             }
 
             // Standard bottom-up BITMAPINFOHEADER (positive biHeight) for maximum Windows driver compatibility
@@ -497,7 +501,10 @@ mod tests {
         let handle = std::thread::spawn(|| {
             let engine = ScreenCaptureEngine::new(75);
             let res = engine.capture_frame();
-            println!("capture_frame result: {:?}", res.as_ref().map(|(w, h, b)| (*w, *h, b.len())));
+            println!(
+                "capture_frame result: {:?}",
+                res.as_ref().map(|(w, h, b)| (*w, *h, b.len()))
+            );
             assert!(res.is_ok());
             let (w, h, bytes) = res.unwrap();
             assert!(w > 0 && h > 0);
@@ -511,7 +518,10 @@ mod tests {
             // A solid black 1536x864 JPEG is ~8-15KB because of identical zero-entropy DCT blocks.
             // A real desktop with icons, wallpaper, UI elements produces > 30-100KB at Q75.
             println!("Captured JPEG size: {} bytes", bytes.len());
-            assert!(bytes.len() > 20000, "JPEG should contain rich desktop visual data, not solid black");
+            assert!(
+                bytes.len() > 20000,
+                "JPEG should contain rich desktop visual data, not solid black"
+            );
         });
         handle.join().expect("Worker thread panicked");
     }
